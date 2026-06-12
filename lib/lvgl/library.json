@@ -1,0 +1,16 @@
+{
+  "name": "lvgl",
+  "version": "9.3.0-waveshare",
+  "build": {
+    "includeDir": ".",
+    "srcDir": "src",
+    "srcFilter": [
+      "+<*>",
+      "-<demos/>",
+      "-<drivers/>",
+      "-<libs/>",
+      "+<libs/bin_decoder/>",
+      "-<others/>"
+    ]
+  }
+}
