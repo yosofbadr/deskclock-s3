@@ -70,7 +70,15 @@ If automatic upload fails with `Failed to connect to ESP32-S3: No serial data re
 Audio hardware test firmware:
 
 ```sh
+pio run -e audio_test
 pio run -e audio_test -t upload
+```
+
+Current release-readiness build checks:
+
+```sh
+pio run -e waveshare_touch_lcd_3_49
+pio run -e audio_test
 ```
 
 ## On-device verification checklist
