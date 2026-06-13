@@ -65,7 +65,22 @@ Serial monitor:
 pio device monitor -p /dev/cu.usbmodem2101 -b 115200
 ```
 
-If automatic upload fails with `Failed to connect to ESP32-S3: No serial data received`, put the board in bootloader mode manually and retry upload. On this board that usually means holding **BOOT**, tapping reset/reconnect, then releasing **BOOT** once upload starts.
+If automatic upload fails with `Failed to connect to ESP32-S3: No serial data received`, put the board in bootloader mode manually and retry upload.
+
+Manual ESP32-S3 bootloader recovery:
+
+1. Start the upload command and wait for `Connecting...`, or prepare to run it in the next step.
+2. Hold **BOOT**.
+3. While still holding **BOOT**, tap **RESET** if available, or unplug/replug USB.
+4. Keep holding **BOOT** until the terminal moves past `Connecting...` and begins writing flash.
+5. Release **BOOT** after upload starts.
+6. If the port changes, list ports with `pio device list` and retry with `--upload-port <port>`.
+
+Example explicit-port retry:
+
+```sh
+pio run -e waveshare_touch_lcd_3_49 -t upload --upload-port /dev/cu.usbmodem2101
+```
 
 Audio hardware test firmware:
 
