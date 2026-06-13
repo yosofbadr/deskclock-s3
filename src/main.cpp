@@ -206,6 +206,7 @@ void loop()
 #else
 
 #include "app/AlarmService.h"
+#include "app/BrightnessService.h"
 #include "app/TimeService.h"
 #include "lvgl_port.h"
 #include "src/lcd_bl_bsp/lcd_bl_pwm_bsp.h"
@@ -244,6 +245,7 @@ void setup()
   DeskClock::AlarmService::begin(DeskClock::TimeService::snapshot().now);
   lvgl_port_init();
   lcd_bl_pwm_bsp_init(LCD_PWM_MODE_255);
+  DeskClock::BrightnessService::begin();
 
   Serial.println("DeskClock S3: display shell started");
 }
@@ -251,7 +253,9 @@ void setup()
 void loop()
 {
   DeskClock::TimeService::loop();
-  DeskClock::AlarmService::loop(DeskClock::TimeService::snapshot().now);
+  DeskClock::TimeSnapshot snapshot = DeskClock::TimeService::snapshot();
+  DeskClock::AlarmService::loop(snapshot.now);
+  DeskClock::BrightnessService::loop(snapshot.now);
   handle_boot_button_alarm_dismissal();
   delay(50);
 }
