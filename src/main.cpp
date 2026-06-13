@@ -225,6 +225,11 @@ uint32_t last_boot_button_change_ms = 0;
 uint32_t boot_button_down_since_ms = 0;
 bool boot_long_press_handled = false;
 
+uint32_t boot_press_duration_ms(uint32_t now_ms)
+{
+  return now_ms >= boot_button_down_since_ms ? now_ms - boot_button_down_since_ms : 0;
+}
+
 void handle_boot_button()
 {
   const bool down = digitalRead(kBootButtonPin) == LOW;
@@ -236,11 +241,14 @@ void handle_boot_button()
     if (down) {
       boot_button_down_since_ms = now_ms;
       boot_long_press_handled = false;
+      Serial.println("BOOT: pressed");
       if (DeskClock::AlarmService::activeAlert().active) {
         Serial.println("BOOT: dismissing active alarm");
         DeskClock::AlarmService::dismissActiveAlert();
         boot_long_press_handled = true;
       }
+    } else {
+      Serial.printf("BOOT: released after %lu ms\n", static_cast<unsigned long>(boot_press_duration_ms(now_ms)));
     }
   }
 
