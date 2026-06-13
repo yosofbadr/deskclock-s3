@@ -211,24 +211,41 @@ void loop()
 #include "app/NetworkService.h"
 #include "app/SettingsService.h"
 #include "app/TimeService.h"
+#include "app/TimeSetupView.h"
 #include "lvgl_port.h"
 #include "src/lcd_bl_bsp/lcd_bl_pwm_bsp.h"
 
 namespace {
 constexpr int kBootButtonPin = 0;
+constexpr uint32_t kBootDebounceMs = 50;
+constexpr uint32_t kBootSettingsLongPressMs = 1200;
+
 bool boot_button_was_down = false;
 uint32_t last_boot_button_change_ms = 0;
+uint32_t boot_button_down_since_ms = 0;
+bool boot_long_press_handled = false;
 
-void handle_boot_button_alarm_dismissal()
+void handle_boot_button()
 {
   const bool down = digitalRead(kBootButtonPin) == LOW;
   const uint32_t now_ms = millis();
-  if (down != boot_button_was_down && now_ms - last_boot_button_change_ms > 50) {
+
+  if (down != boot_button_was_down && now_ms - last_boot_button_change_ms > kBootDebounceMs) {
     boot_button_was_down = down;
     last_boot_button_change_ms = now_ms;
     if (down) {
-      DeskClock::AlarmService::dismissActiveAlert();
+      boot_button_down_since_ms = now_ms;
+      boot_long_press_handled = false;
+      if (DeskClock::AlarmService::activeAlert().active) {
+        DeskClock::AlarmService::dismissActiveAlert();
+        boot_long_press_handled = true;
+      }
     }
+  }
+
+  if (boot_button_was_down && !boot_long_press_handled && now_ms - boot_button_down_since_ms >= kBootSettingsLongPressMs) {
+    DeskClock::TimeSetupView::open();
+    boot_long_press_handled = true;
   }
 }
 } // namespace
@@ -264,7 +281,7 @@ void loop()
   DeskClock::AlarmToneService::loop(DeskClock::AlarmService::activeAlert());
   DeskClock::BrightnessService::loop(snapshot.now);
   DeskClock::NetworkService::loop();
-  handle_boot_button_alarm_dismissal();
+  handle_boot_button();
   delay(50);
 }
 
