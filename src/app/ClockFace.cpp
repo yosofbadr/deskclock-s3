@@ -8,6 +8,7 @@
 #include "AlarmManagerView.h"
 #include "AlarmAlertView.h"
 #include "BrightnessSettingsView.h"
+#include "ClockDisplayFormatter.h"
 #include "NetworkSetupView.h"
 #include "SettingsService.h"
 #include "TimeService.h"
@@ -48,55 +49,6 @@ void set_text_color(lv_obj_t *obj, uint32_t color)
   DeskClock::UiWidgets::setTextColor(obj, color);
 }
 
-const char *weekday_name(uint8_t week)
-{
-  static constexpr const char *names[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
-  return week < 7 ? names[week] : "---";
-}
-
-const char *month_name(uint8_t month)
-{
-  static constexpr const char *names[] = {
-      "---", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
-  return month <= 12 ? names[month] : "---";
-}
-
-uint32_t sync_dot_color(DeskClock::SyncState state, bool blink)
-{
-  switch (state) {
-  case DeskClock::SyncState::SyncedRecently:
-    return blink ? 0x10B981 : 0x6EE7B7; // green
-  case DeskClock::SyncState::LocalRetained:
-    return blink ? 0xF59E0B : 0xFCD34D; // amber
-  case DeskClock::SyncState::Unreliable:
-  default:
-    return blink ? 0xEF4444 : 0xFCA5A5; // red
-  }
-}
-
-const char *status_text(const DeskClock::TimeSnapshot &snapshot)
-{
-  if (!snapshot.rtc_available) {
-    return "rtc unavailable";
-  }
-  if (!snapshot.now.valid) {
-    return "time not set";
-  }
-  if (snapshot.bootstrapped_from_compile_time) {
-    return "rtc build seed";
-  }
-  switch (snapshot.sync_state) {
-  case DeskClock::SyncState::SyncedRecently:
-    return "synced";
-  case DeskClock::SyncState::LocalRetained:
-    return "rtc local";
-  case DeskClock::SyncState::Unreliable:
-  default:
-    return "time not set";
-  }
-}
-
 void realign_time_details()
 {
   lv_obj_update_layout(time_label);
@@ -104,23 +56,10 @@ void realign_time_details()
   lv_obj_align_to(seconds_label, time_label, LV_ALIGN_OUT_RIGHT_MID, 10, 8);
 }
 
-void format_time(char *buffer, size_t size, uint8_t hour, uint8_t minute)
-{
-  DeskClock::TimeSetupView::formatTime(buffer, size, hour, minute);
-}
-
 void update_next_alarm_label(const DeskClock::DateTime &now)
 {
-  DeskClock::AlarmOccurrence next = DeskClock::AlarmService::nextAlarm(now);
-  if (!next.exists) {
-    lv_label_set_text(next_alarm_label, "Alarms: tap to add");
-    return;
-  }
-
-  char alarm_time[12];
-  format_time(alarm_time, sizeof(alarm_time), next.at.hour, next.at.minute);
   char buffer[40];
-  snprintf(buffer, sizeof(buffer), "Alarm %s %s", alarm_time, DeskClock::AlarmService::recurrenceLabel(next.alarm.recurrence));
+  DeskClock::ClockDisplayFormatter::nextAlarmText(buffer, sizeof(buffer), now);
   lv_label_set_text(next_alarm_label, buffer);
 }
 
@@ -138,35 +77,29 @@ void update_clock_from_time_service(lv_timer_t *)
     lv_label_set_text(time_label, "--:--");
     lv_label_set_text(date_label, "Time not set");
     lv_label_set_text(seconds_label, "unreliable");
-    lv_label_set_text(status_label, status_text(snapshot));
+    lv_label_set_text(status_label, DeskClock::ClockDisplayFormatter::statusText(snapshot));
     lv_label_set_text(next_alarm_label, "Alarms: tap to add");
-    lv_obj_set_style_bg_color(sync_dot, lv_color_hex(sync_dot_color(DeskClock::SyncState::Unreliable, blink)), 0);
+    lv_obj_set_style_bg_color(sync_dot, lv_color_hex(DeskClock::ClockDisplayFormatter::syncDotColor(DeskClock::SyncState::Unreliable, blink)), 0);
     DeskClock::AlarmAlertView::update(snapshot.now);
     realign_time_details();
     return;
   }
 
   char time_buffer[12];
-  format_time(time_buffer, sizeof(time_buffer), snapshot.now.hour, snapshot.now.minute);
+  DeskClock::ClockDisplayFormatter::timeText(time_buffer, sizeof(time_buffer), snapshot.now.hour, snapshot.now.minute);
   lv_label_set_text(time_label, time_buffer);
 
   char date_buffer[20];
-  snprintf(
-      date_buffer,
-      sizeof(date_buffer),
-      "%s, %s %u",
-      weekday_name(snapshot.now.week),
-      month_name(snapshot.now.month),
-      snapshot.now.day);
+  DeskClock::ClockDisplayFormatter::dateText(date_buffer, sizeof(date_buffer), snapshot.now);
   lv_label_set_text(date_label, date_buffer);
 
   char seconds_buffer[16];
   snprintf(seconds_buffer, sizeof(seconds_buffer), ":%02u  local", snapshot.now.second);
   lv_label_set_text(seconds_label, seconds_buffer);
 
-  lv_label_set_text(status_label, status_text(snapshot));
+  lv_label_set_text(status_label, DeskClock::ClockDisplayFormatter::statusText(snapshot));
   update_next_alarm_label(snapshot.now);
-  lv_obj_set_style_bg_color(sync_dot, lv_color_hex(sync_dot_color(snapshot.sync_state, blink)), 0);
+  lv_obj_set_style_bg_color(sync_dot, lv_color_hex(DeskClock::ClockDisplayFormatter::syncDotColor(snapshot.sync_state, blink)), 0);
   DeskClock::AlarmAlertView::update(snapshot.now);
   realign_time_details();
 }
