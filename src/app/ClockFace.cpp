@@ -74,6 +74,61 @@ const char *month_name(uint8_t month)
   return month <= 12 ? names[month] : "---";
 }
 
+bool is_leap_year(uint16_t year)
+{
+  return ((year % 4U) == 0U && (year % 100U) != 0U) || ((year % 400U) == 0U);
+}
+
+uint8_t days_in_month(uint16_t year, uint8_t month)
+{
+  static constexpr uint8_t days[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+  if (month < 1 || month > 12) {
+    return 31;
+  }
+  if (month == 2 && is_leap_year(year)) {
+    return 29;
+  }
+  return days[month - 1];
+}
+
+void adjust_date_by_days(uint16_t &year, uint8_t &month, uint8_t &day, int8_t delta)
+{
+  if (year < 2024 || month < 1 || month > 12 || day < 1 || day > days_in_month(year, month)) {
+    year = 2026;
+    month = 1;
+    day = 1;
+  }
+
+  while (delta > 0) {
+    const uint8_t month_days = days_in_month(year, month);
+    if (day < month_days) {
+      day++;
+    } else {
+      day = 1;
+      month++;
+      if (month > 12) {
+        month = 1;
+        year++;
+      }
+    }
+    delta--;
+  }
+
+  while (delta < 0) {
+    if (day > 1) {
+      day--;
+    } else if (month > 1) {
+      month--;
+      day = days_in_month(year, month);
+    } else if (year > 2024) {
+      year--;
+      month = 12;
+      day = 31;
+    }
+    delta++;
+  }
+}
+
 uint32_t sync_dot_color(DeskClock::SyncState state, bool blink)
 {
   switch (state) {
@@ -271,6 +326,13 @@ void adjust_alarm_time_event(lv_event_t *event)
   refresh_alarm_editor();
 }
 
+void adjust_alarm_date_event(lv_event_t *event)
+{
+  const int8_t delta = static_cast<int8_t>(reinterpret_cast<intptr_t>(lv_event_get_user_data(event)));
+  adjust_date_by_days(editing_alarm.year, editing_alarm.month, editing_alarm.day, delta);
+  refresh_alarm_editor();
+}
+
 void cycle_alarm_recurrence_event(lv_event_t *)
 {
   switch (editing_alarm.recurrence) {
@@ -291,6 +353,9 @@ void cycle_alarm_recurrence_event(lv_event_t *)
       editing_alarm.year = now.year;
       editing_alarm.month = now.month;
       editing_alarm.day = now.day;
+      if (editing_alarm.hour < now.hour || (editing_alarm.hour == now.hour && editing_alarm.minute <= now.minute)) {
+        adjust_date_by_days(editing_alarm.year, editing_alarm.month, editing_alarm.day, 1);
+      }
     } else {
       editing_alarm.year = 2026;
       editing_alarm.month = 1;
@@ -411,8 +476,19 @@ void refresh_alarm_editor()
 
   char alarm_time[12];
   format_time(alarm_time, sizeof(alarm_time), editing_alarm.hour, editing_alarm.minute);
-  char details[80];
-  snprintf(details, sizeof(details), "%s\n%s", alarm_time, DeskClock::AlarmService::recurrenceLabel(editing_alarm.recurrence));
+  char details[96];
+  if (editing_alarm.recurrence == DeskClock::AlarmRecurrence::Once) {
+    snprintf(
+        details,
+        sizeof(details),
+        "%s\n%04u-%02u-%02u once",
+        alarm_time,
+        editing_alarm.year,
+        editing_alarm.month,
+        editing_alarm.day);
+  } else {
+    snprintf(details, sizeof(details), "%s\n%s", alarm_time, DeskClock::AlarmService::recurrenceLabel(editing_alarm.recurrence));
+  }
   lv_obj_t *value = lv_label_create(alarm_manager_panel);
   lv_obj_set_style_text_font(value, time_font(), 0);
   lv_obj_set_style_text_align(value, LV_TEXT_ALIGN_CENTER, 0);
@@ -432,6 +508,17 @@ void refresh_alarm_editor()
   lv_obj_t *plus_hour = create_button(alarm_manager_panel, "+1h", 58, 34);
   lv_obj_align(plus_hour, LV_ALIGN_RIGHT_MID, -20, 48);
   lv_obj_add_event_cb(plus_hour, adjust_alarm_time_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(60)));
+
+  lv_obj_t *date_down = create_button(alarm_manager_panel, "D-", 44, 30);
+  lv_obj_align(date_down, LV_ALIGN_TOP_MID, -48, 48);
+  lv_obj_add_event_cb(date_down, adjust_alarm_date_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(-1)));
+  lv_obj_t *date_up = create_button(alarm_manager_panel, "D+", 44, 30);
+  lv_obj_align(date_up, LV_ALIGN_TOP_MID, 48, 48);
+  lv_obj_add_event_cb(date_up, adjust_alarm_date_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(1)));
+  if (editing_alarm.recurrence != DeskClock::AlarmRecurrence::Once) {
+    lv_obj_add_state(date_down, LV_STATE_DISABLED);
+    lv_obj_add_state(date_up, LV_STATE_DISABLED);
+  }
 
   lv_obj_t *recurrence = create_button(alarm_manager_panel, "Repeat", 82, 34);
   lv_obj_align(recurrence, LV_ALIGN_BOTTOM_LEFT, 14, -12);
