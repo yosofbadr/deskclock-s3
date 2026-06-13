@@ -7,6 +7,7 @@
 #include "AlarmService.h"
 #include "AlarmToneService.h"
 #include "BrightnessService.h"
+#include "SettingsService.h"
 #include "TimeService.h"
 #include "lvgl.h"
 
@@ -18,6 +19,7 @@ lv_obj_t *seconds_label = nullptr;
 lv_obj_t *status_label = nullptr;
 lv_obj_t *next_alarm_label = nullptr;
 lv_obj_t *sync_dot = nullptr;
+lv_obj_t *setup_hint_label = nullptr;
 lv_obj_t *alert_panel = nullptr;
 lv_obj_t *alert_time_label = nullptr;
 lv_obj_t *alarm_manager_panel = nullptr;
@@ -307,8 +309,18 @@ void refresh_time_setup()
   }
   char time_text[12];
   format_time(time_text, sizeof(time_text), editing_time.hour, editing_time.minute);
-  char buffer[72];
-  snprintf(buffer, sizeof(buffer), "%04u-%02u-%02u  %s\nFormat: %s", editing_time.year, editing_time.month, editing_time.day, time_text, use_24_hour_time ? "24h" : "12h");
+  DeskClock::SettingsSnapshot settings = DeskClock::SettingsService::snapshot();
+  char buffer[96];
+  snprintf(
+      buffer,
+      sizeof(buffer),
+      "%04u-%02u-%02u  %s\nFormat: %s  TZ: %s",
+      editing_time.year,
+      editing_time.month,
+      editing_time.day,
+      time_text,
+      use_24_hour_time ? "24h" : "12h",
+      settings.timezone_label);
   lv_label_set_text(time_setup_value_label, buffer);
 }
 
@@ -321,6 +333,10 @@ void save_time_setup_event(lv_event_t *)
 {
   editing_time.second = 0;
   if (DeskClock::TimeService::setManualTime(editing_time)) {
+    DeskClock::SettingsService::setConfigured(true);
+    if (setup_hint_label != nullptr) {
+      lv_obj_add_flag(setup_hint_label, LV_OBJ_FLAG_HIDDEN);
+    }
     lv_obj_add_flag(time_setup_panel, LV_OBJ_FLAG_HIDDEN);
   }
 }
@@ -329,6 +345,12 @@ void toggle_time_format_event(lv_event_t *)
 {
   use_24_hour_time = !use_24_hour_time;
   save_display_preferences();
+  refresh_time_setup();
+}
+
+void cycle_timezone_event(lv_event_t *)
+{
+  DeskClock::SettingsService::cycleTimezone();
   refresh_time_setup();
 }
 
@@ -559,6 +581,17 @@ extern "C" void clock_face_create(void)
   lv_label_set_text(seconds_label, "unreliable");
   lv_obj_align_to(seconds_label, time_label, LV_ALIGN_OUT_RIGHT_MID, 10, 8);
 
+  setup_hint_label = lv_label_create(clock_panel);
+  lv_obj_set_style_text_font(setup_hint_label, body_font(), 0);
+  set_text_color(setup_hint_label, 0x2563EB);
+  lv_label_set_text(setup_hint_label, "Setup: tap here for time/format/TZ");
+  lv_obj_align(setup_hint_label, LV_ALIGN_TOP_MID, 0, 14);
+  lv_obj_add_flag(setup_hint_label, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_add_event_cb(setup_hint_label, open_time_setup_event, LV_EVENT_CLICKED, nullptr);
+  if (DeskClock::SettingsService::snapshot().configured) {
+    lv_obj_add_flag(setup_hint_label, LV_OBJ_FLAG_HIDDEN);
+  }
+
   sync_dot = lv_obj_create(clock_panel);
   lv_obj_remove_style_all(sync_dot);
   lv_obj_set_size(sync_dot, 14, 14);
@@ -685,11 +718,14 @@ extern "C" void clock_face_create(void)
   lv_obj_align(plus_hour, LV_ALIGN_RIGHT_MID, -20, 18);
   lv_obj_add_event_cb(plus_hour, adjust_time_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(60)));
 
-  lv_obj_t *format_button = create_button(time_setup_panel, "12/24h", 82, 34);
+  lv_obj_t *format_button = create_button(time_setup_panel, "12/24h", 76, 34);
   lv_obj_align(format_button, LV_ALIGN_BOTTOM_LEFT, 14, -12);
   lv_obj_add_event_cb(format_button, toggle_time_format_event, LV_EVENT_CLICKED, nullptr);
+  lv_obj_t *timezone_button = create_button(time_setup_panel, "TZ", 54, 34);
+  lv_obj_align(timezone_button, LV_ALIGN_BOTTOM_LEFT, 96, -12);
+  lv_obj_add_event_cb(timezone_button, cycle_timezone_event, LV_EVENT_CLICKED, nullptr);
   lv_obj_t *save_button = create_button(time_setup_panel, "Set time", 92, 34);
-  lv_obj_align(save_button, LV_ALIGN_BOTTOM_MID, 0, -12);
+  lv_obj_align(save_button, LV_ALIGN_BOTTOM_MID, 24, -12);
   lv_obj_add_event_cb(save_button, save_time_setup_event, LV_EVENT_CLICKED, nullptr);
   lv_obj_t *close_time_button = create_button(time_setup_panel, "Close", 74, 34);
   lv_obj_align(close_time_button, LV_ALIGN_BOTTOM_RIGHT, -14, -12);

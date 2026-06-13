@@ -208,6 +208,7 @@ void loop()
 #include "app/AlarmService.h"
 #include "app/AlarmToneService.h"
 #include "app/BrightnessService.h"
+#include "app/SettingsService.h"
 #include "app/TimeService.h"
 #include "lvgl_port.h"
 #include "src/lcd_bl_bsp/lcd_bl_pwm_bsp.h"
@@ -242,6 +243,7 @@ void setup()
   pinMode(kBootButtonPin, INPUT_PULLUP);
 
   i2c_master_Init();
+  DeskClock::SettingsService::begin();
   DeskClock::TimeService::begin();
   DeskClock::AlarmService::begin(DeskClock::TimeService::snapshot().now);
   DeskClock::AlarmToneService::begin();
