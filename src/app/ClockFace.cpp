@@ -8,7 +8,7 @@
 #include "AlarmService.h"
 #include "AlarmAlertView.h"
 #include "BrightnessSettingsView.h"
-#include "NetworkService.h"
+#include "NetworkSetupView.h"
 #include "SettingsService.h"
 #include "TimeService.h"
 #include "UiWidgets.h"
@@ -26,8 +26,6 @@ lv_obj_t *setup_hint_label = nullptr;
 lv_obj_t *alarm_manager_panel = nullptr;
 lv_obj_t *time_setup_panel = nullptr;
 lv_obj_t *time_setup_value_label = nullptr;
-lv_obj_t *network_panel = nullptr;
-lv_obj_t *network_value_label = nullptr;
 bool use_24_hour_time = true;
 DeskClock::DateTime editing_time;
 DeskClock::Alarm editing_alarm;
@@ -233,15 +231,6 @@ DeskClock::Alarm *find_alarm_by_id(uint8_t id, DeskClock::Alarm *alarms, size_t 
 lv_obj_t *create_button(lv_obj_t *parent, const char *text, int32_t width, int32_t height)
 {
   return DeskClock::UiWidgets::button(parent, text, width, height);
-}
-
-lv_obj_t *create_password_key(lv_obj_t *parent, char value, int32_t x, int32_t y)
-{
-  char label[2] = {value, '\0'};
-  lv_obj_t *button = create_button(parent, label, 30, 24);
-  lv_obj_align(button, LV_ALIGN_TOP_LEFT, x, y);
-  lv_obj_add_event_cb(button, append_wifi_password_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(value)));
-  return button;
 }
 
 void close_alarm_manager_event(lv_event_t *)
@@ -523,87 +512,6 @@ void refresh_alarm_editor()
   lv_obj_add_event_cb(cancel, cancel_alarm_editor_event, LV_EVENT_CLICKED, nullptr);
 }
 
-void refresh_network_setup()
-{
-  if (network_value_label == nullptr) {
-    return;
-  }
-  DeskClock::NetworkSnapshot network = DeskClock::NetworkService::snapshot();
-  char scan_lines[96] = "";
-  const int scanned = DeskClock::NetworkService::scannedNetworkCount();
-  for (int index = 0; index < scanned && index < 3; ++index) {
-    char line[32];
-    snprintf(line, sizeof(line), "\n%d: %.24s", index + 1, DeskClock::NetworkService::scannedSsid(index));
-    strlcat(scan_lines, line, sizeof(scan_lines));
-  }
-  char buffer[192];
-  snprintf(
-      buffer,
-      sizeof(buffer),
-      "Status: %s\nNetwork: %.32s\nPass: %.32s%s\nCore clock/alarm works offline",
-      network.status,
-      network.ssid,
-      network.password_preview,
-      scan_lines);
-  lv_label_set_text(network_value_label, buffer);
-}
-
-void close_network_event(lv_event_t *)
-{
-  lv_obj_add_flag(network_panel, LV_OBJ_FLAG_HIDDEN);
-}
-
-void skip_wifi_event(lv_event_t *)
-{
-  DeskClock::NetworkService::setEnabled(false);
-  refresh_network_setup();
-}
-
-void scan_wifi_event(lv_event_t *)
-{
-  DeskClock::NetworkService::scanNetworks();
-  refresh_network_setup();
-}
-
-void select_scanned_wifi_event(lv_event_t *event)
-{
-  const int index = static_cast<int>(reinterpret_cast<intptr_t>(lv_event_get_user_data(event)));
-  DeskClock::NetworkService::selectScannedNetwork(index);
-  refresh_network_setup();
-}
-
-void append_wifi_password_event(lv_event_t *event)
-{
-  const char value = static_cast<char>(reinterpret_cast<intptr_t>(lv_event_get_user_data(event)));
-  DeskClock::NetworkService::appendPasswordChar(value);
-  refresh_network_setup();
-}
-
-void backspace_wifi_password_event(lv_event_t *)
-{
-  DeskClock::NetworkService::backspacePassword();
-  refresh_network_setup();
-}
-
-void connect_wifi_event(lv_event_t *)
-{
-  DeskClock::NetworkService::connectSelected();
-  refresh_network_setup();
-}
-
-void select_demo_wifi_event(lv_event_t *)
-{
-  DeskClock::NetworkService::selectDemoNetwork();
-  refresh_network_setup();
-}
-
-void open_network_event(lv_event_t *)
-{
-  refresh_network_setup();
-  lv_obj_clear_flag(network_panel, LV_OBJ_FLAG_HIDDEN);
-  lv_obj_move_foreground(network_panel);
-}
-
 void refresh_time_setup()
 {
   if (time_setup_value_label == nullptr) {
@@ -873,7 +781,7 @@ extern "C" void clock_face_create(void)
   lv_obj_add_event_cb(timezone_button, cycle_timezone_event, LV_EVENT_CLICKED, nullptr);
   lv_obj_t *wifi_button = create_button(time_setup_panel, "Wi-Fi", 58, 34);
   lv_obj_align(wifi_button, LV_ALIGN_BOTTOM_LEFT, 140, -12);
-  lv_obj_add_event_cb(wifi_button, open_network_event, LV_EVENT_CLICKED, nullptr);
+  lv_obj_add_event_cb(wifi_button, [](lv_event_t *) { DeskClock::NetworkSetupView::open(); }, LV_EVENT_CLICKED, nullptr);
   lv_obj_t *save_button = create_button(time_setup_panel, "Set time", 92, 34);
   lv_obj_align(save_button, LV_ALIGN_BOTTOM_MID, 38, -12);
   lv_obj_add_event_cb(save_button, save_time_setup_event, LV_EVENT_CLICKED, nullptr);
@@ -881,63 +789,7 @@ extern "C" void clock_face_create(void)
   lv_obj_align(close_time_button, LV_ALIGN_BOTTOM_RIGHT, -14, -12);
   lv_obj_add_event_cb(close_time_button, close_time_setup_event, LV_EVENT_CLICKED, nullptr);
 
-  network_panel = DeskClock::UiWidgets::modalPanel(screen, width, height);
-
-  lv_obj_t *network_title = lv_label_create(network_panel);
-  lv_obj_set_style_text_font(network_title, body_font(), 0);
-  set_text_color(network_title, 0x1F2933);
-  lv_label_set_text(network_title, "Network setup");
-  lv_obj_align(network_title, LV_ALIGN_TOP_LEFT, 14, 10);
-
-  network_value_label = lv_label_create(network_panel);
-  lv_obj_set_style_text_font(network_value_label, body_font(), 0);
-  lv_obj_set_style_text_align(network_value_label, LV_TEXT_ALIGN_CENTER, 0);
-  set_text_color(network_value_label, 0x1F2933);
-  lv_label_set_text(network_value_label, "offline");
-  lv_obj_align(network_value_label, LV_ALIGN_CENTER, 0, -20);
-
-  lv_obj_t *scan_wifi = create_button(network_panel, "Scan", 70, 32);
-  lv_obj_align(scan_wifi, LV_ALIGN_TOP_RIGHT, -14, 10);
-  lv_obj_add_event_cb(scan_wifi, scan_wifi_event, LV_EVENT_CLICKED, nullptr);
-
-  lv_obj_t *select_one = create_button(network_panel, "1", 42, 30);
-  lv_obj_align(select_one, LV_ALIGN_LEFT_MID, 52, 36);
-  lv_obj_add_event_cb(select_one, select_scanned_wifi_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(0)));
-  lv_obj_t *select_two = create_button(network_panel, "2", 42, 30);
-  lv_obj_align(select_two, LV_ALIGN_CENTER, 0, 36);
-  lv_obj_add_event_cb(select_two, select_scanned_wifi_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(1)));
-  lv_obj_t *select_three = create_button(network_panel, "3", 42, 30);
-  lv_obj_align(select_three, LV_ALIGN_RIGHT_MID, -52, 36);
-  lv_obj_add_event_cb(select_three, select_scanned_wifi_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(2)));
-
-  static constexpr char row_one[] = "abcdef";
-  static constexpr char row_two[] = "ghijkl";
-  static constexpr char row_three[] = "123456";
-  for (uint8_t index = 0; index < 6; ++index) {
-    create_password_key(network_panel, row_one[index], 30 + (index * 34), 70);
-    create_password_key(network_panel, row_two[index], 30 + (index * 34), 96);
-    create_password_key(network_panel, row_three[index], 30 + (index * 34), 122);
-  }
-  create_password_key(network_panel, '-', 234, 70);
-  create_password_key(network_panel, '_', 234, 96);
-  create_password_key(network_panel, '!', 234, 122);
-
-  lv_obj_t *pass_back = create_button(network_panel, "Bk", 44, 28);
-  lv_obj_align(pass_back, LV_ALIGN_RIGHT_MID, -72, 70);
-  lv_obj_add_event_cb(pass_back, backspace_wifi_password_event, LV_EVENT_CLICKED, nullptr);
-  lv_obj_t *connect = create_button(network_panel, "Conn", 58, 28);
-  lv_obj_align(connect, LV_ALIGN_RIGHT_MID, -10, 70);
-  lv_obj_add_event_cb(connect, connect_wifi_event, LV_EVENT_CLICKED, nullptr);
-
-  lv_obj_t *skip_wifi = create_button(network_panel, "Skip", 68, 34);
-  lv_obj_align(skip_wifi, LV_ALIGN_BOTTOM_LEFT, 14, -12);
-  lv_obj_add_event_cb(skip_wifi, skip_wifi_event, LV_EVENT_CLICKED, nullptr);
-  lv_obj_t *demo_wifi = create_button(network_panel, "Demo", 68, 34);
-  lv_obj_align(demo_wifi, LV_ALIGN_BOTTOM_MID, -38, -12);
-  lv_obj_add_event_cb(demo_wifi, select_demo_wifi_event, LV_EVENT_CLICKED, nullptr);
-  lv_obj_t *close_network = create_button(network_panel, "Close", 74, 34);
-  lv_obj_align(close_network, LV_ALIGN_BOTTOM_RIGHT, -14, -12);
-  lv_obj_add_event_cb(close_network, close_network_event, LV_EVENT_CLICKED, nullptr);
+  DeskClock::NetworkSetupView::create(screen, width, height, body_font());
 
   alarm_manager_panel = DeskClock::UiWidgets::modalPanel(screen, width, height);
   refresh_alarm_manager();
