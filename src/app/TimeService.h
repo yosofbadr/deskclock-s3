@@ -32,6 +32,7 @@ namespace TimeService {
 
 bool begin();
 void loop();
+bool setManualTime(const DateTime &date_time);
 TimeSnapshot snapshot();
 
 } // namespace TimeService

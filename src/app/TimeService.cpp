@@ -242,6 +242,32 @@ void loop()
   store_snapshot(read_snapshot_from_rtc(previous.bootstrapped_from_compile_time));
 }
 
+bool setManualTime(const DateTime &date_time)
+{
+  DateTime adjusted = date_time;
+  adjusted.week = day_of_week(adjusted.year, adjusted.month, adjusted.day);
+  adjusted.valid = true;
+  if (!is_plausible(adjusted) || !write_rtc(adjusted)) {
+    return false;
+  }
+
+  TimeSnapshot manual;
+  manual.now = adjusted;
+  manual.sync_state = SyncState::LocalRetained;
+  manual.rtc_available = true;
+  manual.bootstrapped_from_compile_time = false;
+  store_snapshot(manual);
+  Serial.printf(
+      "RTC: manually set to %04u-%02u-%02u %02u:%02u:%02u\n",
+      adjusted.year,
+      adjusted.month,
+      adjusted.day,
+      adjusted.hour,
+      adjusted.minute,
+      adjusted.second);
+  return true;
+}
+
 TimeSnapshot snapshot()
 {
   TimeSnapshot copy;
