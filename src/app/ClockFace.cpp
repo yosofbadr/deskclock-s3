@@ -210,7 +210,7 @@ void update_next_alarm_label(const DeskClock::DateTime &now)
 {
   DeskClock::AlarmOccurrence next = DeskClock::AlarmService::nextAlarm(now);
   if (!next.exists) {
-    lv_label_set_text(next_alarm_label, "No alarm");
+    lv_label_set_text(next_alarm_label, "Alarms: tap to add");
     return;
   }
 
@@ -813,7 +813,7 @@ void update_clock_from_time_service(lv_timer_t *)
     lv_label_set_text(date_label, "Time not set");
     lv_label_set_text(seconds_label, "unreliable");
     lv_label_set_text(status_label, status_text(snapshot));
-    lv_label_set_text(next_alarm_label, "No alarm");
+    lv_label_set_text(next_alarm_label, "Alarms: tap to add");
     lv_obj_set_style_bg_color(sync_dot, lv_color_hex(sync_dot_color(DeskClock::SyncState::Unreliable, blink)), 0);
     update_alert_overlay(snapshot.now);
     realign_time_details();
@@ -883,7 +883,7 @@ extern "C" void clock_face_create(void)
   lv_obj_t *asset_label = lv_label_create(asset_card);
   lv_obj_set_style_text_font(asset_label, body_font(), 0);
   set_text_color(asset_label, 0x52616F);
-  lv_label_set_text(asset_label, "theme\nasset\nslot");
+  lv_label_set_text(asset_label, "settings\nbrightness\nsound");
   lv_obj_set_style_text_align(asset_label, LV_TEXT_ALIGN_CENTER, 0);
   lv_obj_center(asset_label);
 
@@ -916,7 +916,7 @@ extern "C" void clock_face_create(void)
   setup_hint_label = lv_label_create(clock_panel);
   lv_obj_set_style_text_font(setup_hint_label, body_font(), 0);
   set_text_color(setup_hint_label, 0x2563EB);
-  lv_label_set_text(setup_hint_label, "Setup: tap here for time/format/TZ");
+  lv_label_set_text(setup_hint_label, "Setup: time / Wi-Fi / format");
   lv_obj_align(setup_hint_label, LV_ALIGN_TOP_MID, 0, 14);
   lv_obj_add_flag(setup_hint_label, LV_OBJ_FLAG_CLICKABLE);
   lv_obj_add_event_cb(setup_hint_label, open_time_setup_event, LV_EVENT_CLICKED, nullptr);
@@ -937,7 +937,7 @@ extern "C" void clock_face_create(void)
   next_alarm_label = lv_label_create(clock_panel);
   lv_obj_set_style_text_font(next_alarm_label, body_font(), 0);
   set_text_color(next_alarm_label, 0x52616F);
-  lv_label_set_text(next_alarm_label, "No alarm");
+  lv_label_set_text(next_alarm_label, "Alarms: none");
   lv_obj_align(next_alarm_label, LV_ALIGN_BOTTOM_LEFT, 28, -12);
   lv_obj_add_flag(next_alarm_label, LV_OBJ_FLAG_CLICKABLE);
   lv_obj_add_event_cb(next_alarm_label, open_alarm_manager_event, LV_EVENT_CLICKED, nullptr);
@@ -945,7 +945,7 @@ extern "C" void clock_face_create(void)
   status_label = lv_label_create(clock_panel);
   lv_obj_set_style_text_font(status_label, body_font(), 0);
   set_text_color(status_label, 0x829AB1);
-  lv_label_set_text(status_label, "time not set");
+  lv_label_set_text(status_label, "time setup");
   lv_obj_align(status_label, LV_ALIGN_BOTTOM_RIGHT, -18, -12);
   lv_obj_add_flag(status_label, LV_OBJ_FLAG_CLICKABLE);
   lv_obj_add_event_cb(status_label, open_time_setup_event, LV_EVENT_CLICKED, nullptr);
