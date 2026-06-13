@@ -547,7 +547,14 @@ void refresh_network_setup()
     strlcat(scan_lines, line, sizeof(scan_lines));
   }
   char buffer[192];
-  snprintf(buffer, sizeof(buffer), "Status: %s\nNetwork: %.32s%s\nCore clock/alarm works offline", network.status, network.ssid, scan_lines);
+  snprintf(
+      buffer,
+      sizeof(buffer),
+      "Status: %s\nNetwork: %.32s\nPass: %.32s%s\nCore clock/alarm works offline",
+      network.status,
+      network.ssid,
+      network.password_preview,
+      scan_lines);
   lv_label_set_text(network_value_label, buffer);
 }
 
@@ -572,6 +579,25 @@ void select_scanned_wifi_event(lv_event_t *event)
 {
   const int index = static_cast<int>(reinterpret_cast<intptr_t>(lv_event_get_user_data(event)));
   DeskClock::NetworkService::selectScannedNetwork(index);
+  refresh_network_setup();
+}
+
+void append_wifi_password_event(lv_event_t *event)
+{
+  const char value = static_cast<char>(reinterpret_cast<intptr_t>(lv_event_get_user_data(event)));
+  DeskClock::NetworkService::appendPasswordChar(value);
+  refresh_network_setup();
+}
+
+void backspace_wifi_password_event(lv_event_t *)
+{
+  DeskClock::NetworkService::backspacePassword();
+  refresh_network_setup();
+}
+
+void connect_wifi_event(lv_event_t *)
+{
+  DeskClock::NetworkService::connectSelected();
   refresh_network_setup();
 }
 
@@ -1066,14 +1092,30 @@ extern "C" void clock_face_create(void)
   lv_obj_add_event_cb(scan_wifi, scan_wifi_event, LV_EVENT_CLICKED, nullptr);
 
   lv_obj_t *select_one = create_button(network_panel, "1", 42, 30);
-  lv_obj_align(select_one, LV_ALIGN_LEFT_MID, 52, 54);
+  lv_obj_align(select_one, LV_ALIGN_LEFT_MID, 52, 36);
   lv_obj_add_event_cb(select_one, select_scanned_wifi_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(0)));
   lv_obj_t *select_two = create_button(network_panel, "2", 42, 30);
-  lv_obj_align(select_two, LV_ALIGN_CENTER, 0, 54);
+  lv_obj_align(select_two, LV_ALIGN_CENTER, 0, 36);
   lv_obj_add_event_cb(select_two, select_scanned_wifi_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(1)));
   lv_obj_t *select_three = create_button(network_panel, "3", 42, 30);
-  lv_obj_align(select_three, LV_ALIGN_RIGHT_MID, -52, 54);
+  lv_obj_align(select_three, LV_ALIGN_RIGHT_MID, -52, 36);
   lv_obj_add_event_cb(select_three, select_scanned_wifi_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(2)));
+
+  lv_obj_t *pass_a = create_button(network_panel, "a", 36, 28);
+  lv_obj_align(pass_a, LV_ALIGN_LEFT_MID, 18, 70);
+  lv_obj_add_event_cb(pass_a, append_wifi_password_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>('a')));
+  lv_obj_t *pass_one = create_button(network_panel, "1", 36, 28);
+  lv_obj_align(pass_one, LV_ALIGN_LEFT_MID, 62, 70);
+  lv_obj_add_event_cb(pass_one, append_wifi_password_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>('1')));
+  lv_obj_t *pass_dash = create_button(network_panel, "-", 36, 28);
+  lv_obj_align(pass_dash, LV_ALIGN_LEFT_MID, 106, 70);
+  lv_obj_add_event_cb(pass_dash, append_wifi_password_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>('-')));
+  lv_obj_t *pass_back = create_button(network_panel, "Bk", 44, 28);
+  lv_obj_align(pass_back, LV_ALIGN_RIGHT_MID, -72, 70);
+  lv_obj_add_event_cb(pass_back, backspace_wifi_password_event, LV_EVENT_CLICKED, nullptr);
+  lv_obj_t *connect = create_button(network_panel, "Conn", 58, 28);
+  lv_obj_align(connect, LV_ALIGN_RIGHT_MID, -10, 70);
+  lv_obj_add_event_cb(connect, connect_wifi_event, LV_EVENT_CLICKED, nullptr);
 
   lv_obj_t *skip_wifi = create_button(network_panel, "Skip", 68, 34);
   lv_obj_align(skip_wifi, LV_ALIGN_BOTTOM_LEFT, 14, -12);
