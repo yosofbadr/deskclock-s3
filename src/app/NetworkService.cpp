@@ -64,8 +64,16 @@ void begin()
   if (preferences.begin(kPreferencesNamespace, true)) {
     network_enabled = preferences.getBool(kEnabledKey, false);
     demo_network_selected = preferences.getBool(kDemoSelectedKey, false);
-    String stored_ssid = preferences.getString(kSelectedSsidKey, "");
-    String stored_password = preferences.getString(kPasswordKey, "");
+
+    String stored_ssid;
+    String stored_password;
+    if (preferences.isKey(kSelectedSsidKey)) {
+      stored_ssid = preferences.getString(kSelectedSsidKey, "");
+    }
+    if (preferences.isKey(kPasswordKey)) {
+      stored_password = preferences.getString(kPasswordKey, "");
+    }
+
     strlcpy(selected_ssid, stored_ssid.c_str(), sizeof(selected_ssid));
     strlcpy(selected_password, stored_password.c_str(), sizeof(selected_password));
     update_password_preview();
