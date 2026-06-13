@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "AlarmService.h"
+#include "AlarmAlertView.h"
 #include "AlarmToneService.h"
 #include "BrightnessService.h"
 #include "NetworkService.h"
@@ -23,8 +24,6 @@ lv_obj_t *status_label = nullptr;
 lv_obj_t *next_alarm_label = nullptr;
 lv_obj_t *sync_dot = nullptr;
 lv_obj_t *setup_hint_label = nullptr;
-lv_obj_t *alert_panel = nullptr;
-lv_obj_t *alert_time_label = nullptr;
 lv_obj_t *alarm_manager_panel = nullptr;
 lv_obj_t *time_setup_panel = nullptr;
 lv_obj_t *time_setup_value_label = nullptr;
@@ -248,16 +247,6 @@ lv_obj_t *create_password_key(lv_obj_t *parent, char value, int32_t x, int32_t y
   lv_obj_align(button, LV_ALIGN_TOP_LEFT, x, y);
   lv_obj_add_event_cb(button, append_wifi_password_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(value)));
   return button;
-}
-
-void dismiss_alert_event(lv_event_t *)
-{
-  DeskClock::AlarmService::dismissActiveAlert();
-}
-
-void snooze_alert_event(lv_event_t *)
-{
-  DeskClock::AlarmService::snoozeActiveAlert(DeskClock::TimeService::snapshot().now);
 }
 
 void close_alarm_manager_event(lv_event_t *)
@@ -779,26 +768,6 @@ void open_brightness_event(lv_event_t *)
   lv_obj_move_foreground(brightness_panel);
 }
 
-void update_alert_overlay(const DeskClock::DateTime &now)
-{
-  DeskClock::ActiveAlarmAlert alert = DeskClock::AlarmService::activeAlert();
-  if (!alert.active) {
-    lv_obj_add_flag(alert_panel, LV_OBJ_FLAG_HIDDEN);
-    return;
-  }
-
-  char buffer[40];
-  snprintf(buffer, sizeof(buffer), "Alarm %02u:%02u", alert.alarm.hour, alert.alarm.minute);
-  lv_label_set_text(alert_time_label, buffer);
-  lv_obj_clear_flag(alert_panel, LV_OBJ_FLAG_HIDDEN);
-
-  if (now.valid && (now.second % 2U) == 0U) {
-    lv_obj_set_style_bg_color(alert_panel, lv_color_hex(0xFEE2E2), 0);
-  } else {
-    lv_obj_set_style_bg_color(alert_panel, lv_color_hex(0xFFF7ED), 0);
-  }
-}
-
 void update_clock_from_time_service(lv_timer_t *)
 {
   const DeskClock::TimeSnapshot snapshot = DeskClock::TimeService::snapshot();
@@ -811,7 +780,7 @@ void update_clock_from_time_service(lv_timer_t *)
     lv_label_set_text(status_label, status_text(snapshot));
     lv_label_set_text(next_alarm_label, "Alarms: tap to add");
     lv_obj_set_style_bg_color(sync_dot, lv_color_hex(sync_dot_color(DeskClock::SyncState::Unreliable, blink)), 0);
-    update_alert_overlay(snapshot.now);
+    DeskClock::AlarmAlertView::update(snapshot.now);
     realign_time_details();
     return;
   }
@@ -837,7 +806,7 @@ void update_clock_from_time_service(lv_timer_t *)
   lv_label_set_text(status_label, status_text(snapshot));
   update_next_alarm_label(snapshot.now);
   lv_obj_set_style_bg_color(sync_dot, lv_color_hex(sync_dot_color(snapshot.sync_state, blink)), 0);
-  update_alert_overlay(snapshot.now);
+  DeskClock::AlarmAlertView::update(snapshot.now);
   realign_time_details();
 }
 
@@ -1112,38 +1081,7 @@ extern "C" void clock_face_create(void)
   alarm_manager_panel = DeskClock::UiWidgets::modalPanel(screen, width, height);
   refresh_alarm_manager();
 
-  alert_panel = lv_obj_create(screen);
-  lv_obj_set_size(alert_panel, width - 32, height - 32);
-  lv_obj_center(alert_panel);
-  lv_obj_set_style_radius(alert_panel, 22, 0);
-  lv_obj_set_style_bg_color(alert_panel, lv_color_hex(0xFEE2E2), 0);
-  lv_obj_set_style_bg_opa(alert_panel, LV_OPA_COVER, 0);
-  lv_obj_set_style_border_color(alert_panel, lv_color_hex(0xDC2626), 0);
-  lv_obj_set_style_border_width(alert_panel, 4, 0);
-  lv_obj_clear_flag(alert_panel, LV_OBJ_FLAG_SCROLLABLE);
-  lv_obj_add_flag(alert_panel, LV_OBJ_FLAG_HIDDEN);
-
-  alert_time_label = lv_label_create(alert_panel);
-  lv_obj_set_style_text_font(alert_time_label, time_font(), 0);
-  set_text_color(alert_time_label, 0x991B1B);
-  lv_label_set_text(alert_time_label, "Alarm");
-  lv_obj_align(alert_time_label, LV_ALIGN_CENTER, 0, -34);
-
-  lv_obj_t *snooze_button = lv_button_create(alert_panel);
-  lv_obj_set_size(snooze_button, 128, 46);
-  lv_obj_align(snooze_button, LV_ALIGN_BOTTOM_LEFT, 14, -14);
-  lv_obj_add_event_cb(snooze_button, snooze_alert_event, LV_EVENT_CLICKED, nullptr);
-  lv_obj_t *snooze_label = lv_label_create(snooze_button);
-  lv_label_set_text(snooze_label, "Snooze 10m");
-  lv_obj_center(snooze_label);
-
-  lv_obj_t *dismiss_button = lv_button_create(alert_panel);
-  lv_obj_set_size(dismiss_button, 128, 46);
-  lv_obj_align(dismiss_button, LV_ALIGN_BOTTOM_RIGHT, -14, -14);
-  lv_obj_add_event_cb(dismiss_button, dismiss_alert_event, LV_EVENT_CLICKED, nullptr);
-  lv_obj_t *dismiss_label = lv_label_create(dismiss_button);
-  lv_label_set_text(dismiss_label, "Dismiss");
-  lv_obj_center(dismiss_label);
+  DeskClock::AlarmAlertView::create(screen, width, height, time_font());
 
   lv_timer_create(update_clock_from_time_service, 250, nullptr);
   update_clock_from_time_service(nullptr);
