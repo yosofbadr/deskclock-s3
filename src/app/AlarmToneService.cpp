@@ -163,8 +163,12 @@ void begin()
 {
   Preferences preferences;
   if (preferences.begin(kPreferencesNamespace, true)) {
-    current_settings.enabled = preferences.getBool(kAudioEnabledKey, current_settings.enabled);
-    current_settings.volume = clamp_volume(preferences.getUChar(kAlarmVolumeKey, current_settings.volume));
+    if (preferences.isKey(kAudioEnabledKey)) {
+      current_settings.enabled = preferences.getBool(kAudioEnabledKey, current_settings.enabled);
+    }
+    if (preferences.isKey(kAlarmVolumeKey)) {
+      current_settings.volume = clamp_volume(preferences.getUChar(kAlarmVolumeKey, current_settings.volume));
+    }
     preferences.end();
   }
 

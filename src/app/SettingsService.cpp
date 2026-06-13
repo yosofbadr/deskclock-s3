@@ -36,8 +36,12 @@ void begin()
 {
   Preferences preferences;
   if (preferences.begin(kPreferencesNamespace, true)) {
-    configured = preferences.getBool(kConfiguredKey, false);
-    timezone_index = preferences.getUChar(kTimezoneKey, 0) % kTimezoneCount;
+    if (preferences.isKey(kConfiguredKey)) {
+      configured = preferences.getBool(kConfiguredKey, false);
+    }
+    if (preferences.isKey(kTimezoneKey)) {
+      timezone_index = preferences.getUChar(kTimezoneKey, 0) % kTimezoneCount;
+    }
     preferences.end();
   }
 }

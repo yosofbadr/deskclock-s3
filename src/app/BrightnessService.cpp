@@ -73,10 +73,18 @@ void begin()
 {
   Preferences preferences;
   if (preferences.begin(kPreferencesNamespace, true)) {
-    current_settings.day_brightness = preferences.getUChar(kDayBrightnessKey, current_settings.day_brightness);
-    current_settings.night_brightness = preferences.getUChar(kNightBrightnessKey, current_settings.night_brightness);
-    current_settings.night_start_hour = preferences.getUChar(kNightStartKey, current_settings.night_start_hour) % 24U;
-    current_settings.day_start_hour = preferences.getUChar(kDayStartKey, current_settings.day_start_hour) % 24U;
+    if (preferences.isKey(kDayBrightnessKey)) {
+      current_settings.day_brightness = preferences.getUChar(kDayBrightnessKey, current_settings.day_brightness);
+    }
+    if (preferences.isKey(kNightBrightnessKey)) {
+      current_settings.night_brightness = preferences.getUChar(kNightBrightnessKey, current_settings.night_brightness);
+    }
+    if (preferences.isKey(kNightStartKey)) {
+      current_settings.night_start_hour = preferences.getUChar(kNightStartKey, current_settings.night_start_hour) % 24U;
+    }
+    if (preferences.isKey(kDayStartKey)) {
+      current_settings.day_start_hour = preferences.getUChar(kDayStartKey, current_settings.day_start_hour) % 24U;
+    }
     preferences.end();
   }
   apply_brightness(current_settings.day_brightness);
