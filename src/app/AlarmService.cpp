@@ -165,7 +165,7 @@ DateTime alarm_time_on_date(const DateTime &date, const Alarm &alarm)
   return candidate;
 }
 
-bool occurrence_for_alarm(const Alarm &alarm, const DateTime &now, AlarmOccurrence &occurrence)
+bool occurrence_for_alarm(const Alarm &alarm, const DateTime &now, AlarmOccurrence &occurrence, bool ignore_same_minute_guard = false)
 {
   if (!alarm.enabled || !now.valid) {
     return false;
@@ -191,7 +191,7 @@ bool occurrence_for_alarm(const Alarm &alarm, const DateTime &now, AlarmOccurren
       candidate.week = day_of_week(candidate.year, candidate.month, candidate.day);
     }
     candidate_seconds = to_epoch_seconds(candidate);
-    if (candidate_seconds <= now_seconds) {
+    if (candidate_seconds < now_seconds || (!ignore_same_minute_guard && candidate_seconds == now_seconds)) {
       return false;
     }
   } else {
@@ -675,7 +675,7 @@ AlarmOccurrence nextAlarm(const DateTime &now)
 
   AlarmOccurrence best;
   if (has_snoozed_snapshot) {
-    (void)occurrence_for_alarm(snoozed_snapshot, now, best);
+    (void)occurrence_for_alarm(snoozed_snapshot, now, best, true);
   }
   for (size_t index = 0; index < snapshot_count; ++index) {
     AlarmOccurrence candidate;
