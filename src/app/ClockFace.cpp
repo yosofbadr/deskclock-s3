@@ -7,6 +7,7 @@
 #include "AlarmService.h"
 #include "AlarmToneService.h"
 #include "BrightnessService.h"
+#include "NetworkService.h"
 #include "SettingsService.h"
 #include "TimeService.h"
 #include "lvgl.h"
@@ -27,6 +28,8 @@ lv_obj_t *time_setup_panel = nullptr;
 lv_obj_t *time_setup_value_label = nullptr;
 lv_obj_t *brightness_panel = nullptr;
 lv_obj_t *brightness_value_label = nullptr;
+lv_obj_t *network_panel = nullptr;
+lv_obj_t *network_value_label = nullptr;
 bool use_24_hour_time = true;
 DeskClock::DateTime editing_time;
 DeskClock::BrightnessSettings editing_brightness;
@@ -439,6 +442,41 @@ void refresh_alarm_editor()
   lv_obj_t *cancel = create_button(alarm_manager_panel, "Cancel", 74, 34);
   lv_obj_align(cancel, LV_ALIGN_BOTTOM_RIGHT, -14, -12);
   lv_obj_add_event_cb(cancel, cancel_alarm_editor_event, LV_EVENT_CLICKED, nullptr);
+}
+
+void refresh_network_setup()
+{
+  if (network_value_label == nullptr) {
+    return;
+  }
+  DeskClock::NetworkSnapshot network = DeskClock::NetworkService::snapshot();
+  char buffer[96];
+  snprintf(buffer, sizeof(buffer), "Status: %s\nNetwork: %s\nCore clock/alarm works offline", network.status, network.ssid);
+  lv_label_set_text(network_value_label, buffer);
+}
+
+void close_network_event(lv_event_t *)
+{
+  lv_obj_add_flag(network_panel, LV_OBJ_FLAG_HIDDEN);
+}
+
+void skip_wifi_event(lv_event_t *)
+{
+  DeskClock::NetworkService::setEnabled(false);
+  refresh_network_setup();
+}
+
+void select_demo_wifi_event(lv_event_t *)
+{
+  DeskClock::NetworkService::selectDemoNetwork();
+  refresh_network_setup();
+}
+
+void open_network_event(lv_event_t *)
+{
+  refresh_network_setup();
+  lv_obj_clear_flag(network_panel, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_move_foreground(network_panel);
 }
 
 void refresh_time_setup()
@@ -860,15 +898,52 @@ extern "C" void clock_face_create(void)
   lv_obj_t *format_button = create_button(time_setup_panel, "12/24h", 76, 34);
   lv_obj_align(format_button, LV_ALIGN_BOTTOM_LEFT, 14, -12);
   lv_obj_add_event_cb(format_button, toggle_time_format_event, LV_EVENT_CLICKED, nullptr);
-  lv_obj_t *timezone_button = create_button(time_setup_panel, "TZ", 54, 34);
-  lv_obj_align(timezone_button, LV_ALIGN_BOTTOM_LEFT, 96, -12);
+  lv_obj_t *timezone_button = create_button(time_setup_panel, "TZ", 46, 34);
+  lv_obj_align(timezone_button, LV_ALIGN_BOTTOM_LEFT, 88, -12);
   lv_obj_add_event_cb(timezone_button, cycle_timezone_event, LV_EVENT_CLICKED, nullptr);
+  lv_obj_t *wifi_button = create_button(time_setup_panel, "Wi-Fi", 58, 34);
+  lv_obj_align(wifi_button, LV_ALIGN_BOTTOM_LEFT, 140, -12);
+  lv_obj_add_event_cb(wifi_button, open_network_event, LV_EVENT_CLICKED, nullptr);
   lv_obj_t *save_button = create_button(time_setup_panel, "Set time", 92, 34);
-  lv_obj_align(save_button, LV_ALIGN_BOTTOM_MID, 24, -12);
+  lv_obj_align(save_button, LV_ALIGN_BOTTOM_MID, 38, -12);
   lv_obj_add_event_cb(save_button, save_time_setup_event, LV_EVENT_CLICKED, nullptr);
   lv_obj_t *close_time_button = create_button(time_setup_panel, "Close", 74, 34);
   lv_obj_align(close_time_button, LV_ALIGN_BOTTOM_RIGHT, -14, -12);
   lv_obj_add_event_cb(close_time_button, close_time_setup_event, LV_EVENT_CLICKED, nullptr);
+
+  network_panel = lv_obj_create(screen);
+  lv_obj_set_size(network_panel, width - 28, height - 28);
+  lv_obj_center(network_panel);
+  lv_obj_set_style_radius(network_panel, 18, 0);
+  lv_obj_set_style_bg_color(network_panel, lv_color_hex(0xFFFFFF), 0);
+  lv_obj_set_style_bg_opa(network_panel, LV_OPA_COVER, 0);
+  lv_obj_set_style_border_color(network_panel, lv_color_hex(0xCBD5E1), 0);
+  lv_obj_set_style_border_width(network_panel, 2, 0);
+  lv_obj_clear_flag(network_panel, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_add_flag(network_panel, LV_OBJ_FLAG_HIDDEN);
+
+  lv_obj_t *network_title = lv_label_create(network_panel);
+  lv_obj_set_style_text_font(network_title, body_font(), 0);
+  set_text_color(network_title, 0x1F2933);
+  lv_label_set_text(network_title, "Network setup");
+  lv_obj_align(network_title, LV_ALIGN_TOP_LEFT, 14, 10);
+
+  network_value_label = lv_label_create(network_panel);
+  lv_obj_set_style_text_font(network_value_label, body_font(), 0);
+  lv_obj_set_style_text_align(network_value_label, LV_TEXT_ALIGN_CENTER, 0);
+  set_text_color(network_value_label, 0x1F2933);
+  lv_label_set_text(network_value_label, "offline");
+  lv_obj_align(network_value_label, LV_ALIGN_CENTER, 0, -20);
+
+  lv_obj_t *skip_wifi = create_button(network_panel, "Skip Wi-Fi", 96, 34);
+  lv_obj_align(skip_wifi, LV_ALIGN_BOTTOM_LEFT, 14, -12);
+  lv_obj_add_event_cb(skip_wifi, skip_wifi_event, LV_EVENT_CLICKED, nullptr);
+  lv_obj_t *demo_wifi = create_button(network_panel, "Demo SSID", 96, 34);
+  lv_obj_align(demo_wifi, LV_ALIGN_BOTTOM_MID, 0, -12);
+  lv_obj_add_event_cb(demo_wifi, select_demo_wifi_event, LV_EVENT_CLICKED, nullptr);
+  lv_obj_t *close_network = create_button(network_panel, "Close", 74, 34);
+  lv_obj_align(close_network, LV_ALIGN_BOTTOM_RIGHT, -14, -12);
+  lv_obj_add_event_cb(close_network, close_network_event, LV_EVENT_CLICKED, nullptr);
 
   alarm_manager_panel = lv_obj_create(screen);
   lv_obj_set_size(alarm_manager_panel, width - 28, height - 28);

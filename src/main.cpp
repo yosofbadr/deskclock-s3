@@ -208,6 +208,7 @@ void loop()
 #include "app/AlarmService.h"
 #include "app/AlarmToneService.h"
 #include "app/BrightnessService.h"
+#include "app/NetworkService.h"
 #include "app/SettingsService.h"
 #include "app/TimeService.h"
 #include "lvgl_port.h"
@@ -244,6 +245,7 @@ void setup()
 
   i2c_master_Init();
   DeskClock::SettingsService::begin();
+  DeskClock::NetworkService::begin();
   DeskClock::TimeService::begin();
   DeskClock::AlarmService::begin(DeskClock::TimeService::snapshot().now);
   DeskClock::AlarmToneService::begin();
@@ -261,6 +263,7 @@ void loop()
   DeskClock::AlarmService::loop(snapshot.now);
   DeskClock::AlarmToneService::loop(DeskClock::AlarmService::activeAlert());
   DeskClock::BrightnessService::loop(snapshot.now);
+  DeskClock::NetworkService::loop();
   handle_boot_button_alarm_dismissal();
   delay(50);
 }
