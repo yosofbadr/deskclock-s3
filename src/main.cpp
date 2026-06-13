@@ -210,6 +210,25 @@ void loop()
 #include "lvgl_port.h"
 #include "src/lcd_bl_bsp/lcd_bl_pwm_bsp.h"
 
+namespace {
+constexpr int kBootButtonPin = 0;
+bool boot_button_was_down = false;
+uint32_t last_boot_button_change_ms = 0;
+
+void handle_boot_button_alarm_dismissal()
+{
+  const bool down = digitalRead(kBootButtonPin) == LOW;
+  const uint32_t now_ms = millis();
+  if (down != boot_button_was_down && now_ms - last_boot_button_change_ms > 50) {
+    boot_button_was_down = down;
+    last_boot_button_change_ms = now_ms;
+    if (down) {
+      DeskClock::AlarmService::dismissActiveAlert();
+    }
+  }
+}
+} // namespace
+
 void setup()
 {
   delay(500);
@@ -217,6 +236,8 @@ void setup()
   delay(500);
 
   Serial.println("DeskClock S3: booting RTC + LVGL shell");
+
+  pinMode(kBootButtonPin, INPUT_PULLUP);
 
   i2c_master_Init();
   DeskClock::TimeService::begin();
@@ -231,6 +252,7 @@ void loop()
 {
   DeskClock::TimeService::loop();
   DeskClock::AlarmService::loop(DeskClock::TimeService::snapshot().now);
+  handle_boot_button_alarm_dismissal();
   delay(50);
 }
 

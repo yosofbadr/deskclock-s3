@@ -14,6 +14,7 @@ Alarm alarm_list[kMaxAlarms];
 size_t alarm_count = 0;
 uint8_t next_alarm_id = 1;
 int64_t last_seen_now = -1;
+ActiveAlarmAlert active_alert;
 
 bool is_leap_year(uint16_t year)
 {
@@ -230,6 +231,25 @@ bool append_alarm_unlocked(const Alarm &alarm)
   return true;
 }
 
+bool same_alarm_minute(const Alarm &alarm, const DateTime &now)
+{
+  if (alarm.recurrence == AlarmRecurrence::Once) {
+    return alarm.year == now.year && alarm.month == now.month && alarm.day == now.day &&
+           alarm.hour == now.hour && alarm.minute == now.minute;
+  }
+  return recurrence_allows_week(alarm.recurrence, now.week) && alarm.hour == now.hour && alarm.minute == now.minute;
+}
+
+void disable_one_time_alarm_unlocked(uint8_t id)
+{
+  for (size_t index = 0; index < alarm_count; ++index) {
+    if (alarm_list[index].id == id && alarm_list[index].recurrence == AlarmRecurrence::Once) {
+      alarm_list[index].enabled = false;
+      return;
+    }
+  }
+}
+
 size_t copy_alarm_list(Alarm *destination, size_t capacity)
 {
   if (destination == nullptr || capacity == 0) {
@@ -293,6 +313,7 @@ void begin(const DateTime &now)
   portENTER_CRITICAL(&alarm_mux);
   alarm_count = 0;
   next_alarm_id = 1;
+  active_alert = ActiveAlarmAlert();
   portEXIT_CRITICAL(&alarm_mux);
 
   last_seen_now = to_epoch_seconds(now);
@@ -311,39 +332,87 @@ void loop(const DateTime &now)
   }
   last_seen_now = now_seconds;
 
-  Alarm snapshot[kMaxAlarms];
-  const size_t snapshot_count = copy_alarm_list(snapshot, kMaxAlarms);
+  portENTER_CRITICAL(&alarm_mux);
+  if (!active_alert.active) {
+    for (size_t index = 0; index < alarm_count; ++index) {
+      Alarm &alarm = alarm_list[index];
+      if (!alarm.enabled || !same_alarm_minute(alarm, now)) {
+        continue;
+      }
 
-  for (size_t index = 0; index < snapshot_count; ++index) {
-    const Alarm &alarm = snapshot[index];
-    if (!alarm.enabled || alarm.recurrence != AlarmRecurrence::Once) {
-      continue;
-    }
-
-    DateTime occurrence = {};
-    occurrence.year = alarm.year;
-    occurrence.month = alarm.month;
-    occurrence.day = alarm.day;
-    occurrence.hour = alarm.hour;
-    occurrence.minute = alarm.minute;
-    occurrence.second = 0;
-    occurrence.valid = is_valid_date(occurrence.year, occurrence.month, occurrence.day);
-    if (occurrence.valid) {
-      occurrence.week = day_of_week(occurrence.year, occurrence.month, occurrence.day);
-    }
-
-    const int64_t occurrence_seconds = to_epoch_seconds(occurrence);
-    if (occurrence_seconds >= 0 && occurrence_seconds <= now_seconds && setEnabled(alarm.id, false)) {
-      Serial.printf(
-          "AlarmService: one-time alarm %u reached %04u-%02u-%02u %02u:%02u; disabling until alert UI exists\n",
-          alarm.id,
-          alarm.year,
-          alarm.month,
-          alarm.day,
-          alarm.hour,
-          alarm.minute);
+      active_alert.active = true;
+      active_alert.alarm = alarm;
+      active_alert.started_at = now;
+      active_alert.sound_allowed = true;
+      disable_one_time_alarm_unlocked(alarm.id);
+      Serial.printf("AlarmService: alarm %u active at %02u:%02u\n", alarm.id, now.hour, now.minute);
+      break;
     }
   }
+  portEXIT_CRITICAL(&alarm_mux);
+}
+
+bool dismissActiveAlert()
+{
+  bool dismissed = false;
+  portENTER_CRITICAL(&alarm_mux);
+  if (active_alert.active) {
+    active_alert = ActiveAlarmAlert();
+    dismissed = true;
+  }
+  portEXIT_CRITICAL(&alarm_mux);
+  if (dismissed) {
+    Serial.println("AlarmService: active alarm dismissed");
+  }
+  return dismissed;
+}
+
+bool snoozeActiveAlert(const DateTime &now)
+{
+  ActiveAlarmAlert alert;
+  portENTER_CRITICAL(&alarm_mux);
+  alert = active_alert;
+  if (active_alert.active) {
+    active_alert = ActiveAlarmAlert();
+  }
+  portEXIT_CRITICAL(&alarm_mux);
+
+  if (!alert.active || !now.valid) {
+    return false;
+  }
+
+  const int64_t now_seconds = to_epoch_seconds(now);
+  if (now_seconds < 0) {
+    return false;
+  }
+
+  const DateTime snoozed_at = from_epoch_seconds(now_seconds + static_cast<int64_t>(kSnoozeMinutes) * 60LL);
+  Alarm snoozed = alert.alarm;
+  snoozed.id = 0;
+  snoozed.enabled = true;
+  snoozed.recurrence = AlarmRecurrence::Once;
+  snoozed.year = snoozed_at.year;
+  snoozed.month = snoozed_at.month;
+  snoozed.day = snoozed_at.day;
+  snoozed.hour = snoozed_at.hour;
+  snoozed.minute = snoozed_at.minute;
+  snoozed.development_seed = false;
+
+  uint8_t id = 0;
+  const bool added = addAlarm(snoozed, &id);
+  if (added) {
+    Serial.printf("AlarmService: snoozed alarm %u as one-time alarm %u for %02u:%02u\n", alert.alarm.id, id, snoozed.hour, snoozed.minute);
+  }
+  return added;
+}
+
+ActiveAlarmAlert activeAlert()
+{
+  ActiveAlarmAlert copy;
+  portENTER_CRITICAL(&alarm_mux);
+  copy = active_alert;
+  portEXIT_CRITICAL(&alarm_mux);
+  return copy;
 }
 
 bool addAlarm(const Alarm &alarm, uint8_t *created_id)

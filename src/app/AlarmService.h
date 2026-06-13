@@ -37,10 +37,20 @@ struct AlarmOccurrence {
   uint32_t seconds_until = 0;
 };
 
+struct ActiveAlarmAlert {
+  bool active = false;
+  Alarm alarm;
+  DateTime started_at;
+  bool sound_allowed = false;
+};
+
 namespace AlarmService {
 
 void begin(const DateTime &now);
 void loop(const DateTime &now);
+bool dismissActiveAlert();
+bool snoozeActiveAlert(const DateTime &now);
+ActiveAlarmAlert activeAlert();
 bool addAlarm(const Alarm &alarm, uint8_t *created_id = nullptr);
 bool updateAlarm(uint8_t id, const Alarm &alarm);
 bool removeAlarm(uint8_t id);
