@@ -98,6 +98,8 @@ pio run -e audio_test
 
 ## On-device verification checklist
 
+A printable/fillable test log is available at [`docs/hardware-verification.md`](docs/hardware-verification.md).
+
 After flashing normal firmware, verify:
 
 1. Serial boot log includes `DeskClock S3: booting RTC + LVGL shell (0.1.0-dev)` so the flashed image is identifiable.
