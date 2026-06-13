@@ -382,6 +382,36 @@ void begin(const DateTime &now)
 
   (void)load_alarms();
   last_seen_now = to_epoch_seconds(now);
+
+  if (now.valid) {
+    const int64_t now_seconds = to_epoch_seconds(now);
+    bool disabled_missed = false;
+    portENTER_CRITICAL(&alarm_mux);
+    for (size_t index = 0; index < alarm_count; ++index) {
+      Alarm &alarm = alarm_list[index];
+      if (!alarm.enabled || alarm.recurrence != AlarmRecurrence::Once) {
+        continue;
+      }
+      DateTime occurrence = {};
+      occurrence.year = alarm.year;
+      occurrence.month = alarm.month;
+      occurrence.day = alarm.day;
+      occurrence.hour = alarm.hour;
+      occurrence.minute = alarm.minute;
+      occurrence.second = 0;
+      occurrence.valid = is_valid_date(occurrence.year, occurrence.month, occurrence.day);
+      const int64_t occurrence_seconds = to_epoch_seconds(occurrence);
+      if (now_seconds >= 0 && occurrence_seconds >= 0 && occurrence_seconds <= now_seconds) {
+        alarm.enabled = false;
+        disabled_missed = true;
+      }
+    }
+    portEXIT_CRITICAL(&alarm_mux);
+    if (disabled_missed) {
+      Serial.println("AlarmService: disabled missed one-time alarms on boot");
+      save_alarms();
+    }
+  }
 }
 
 void loop(const DateTime &now)
