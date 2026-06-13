@@ -23,16 +23,32 @@ An alarm should fire from local device state even when optional services are una
 _Avoid_: AI-gated alarm, internet-required alarm
 
 **Alarm Alert**:
-The visible and optionally audible signal produced when an alarm fires. It must always include a visual alert, while sound may be added when speaker output is available and configured.
-_Avoid_: audio-only alarm, speaker-required alarm
+The visible and optionally audible signal produced when an alarm fires. It must always include a visual alert, while sound may be added when speaker output is available and configured. In v1, the alert should use one built-in alarm tone, a single global alarm volume setting, and a test-sound action in settings.
+_Avoid_: audio-only alarm, speaker-required alarm, theme-owned alarm sound
 
 **Alarm Dismissal**:
 The user action that stops an active alarm alert. It should be available from both the touchscreen and the BOOT button so the alarm can be stopped reliably in normal use.
 _Avoid_: touch-only dismissal, app-only dismissal, power-button-required dismissal
 
 **Snooze**:
-A temporary postponement of an active alarm alert. In v1, snooze should use a fixed 10-minute delay rather than a user-configurable duration.
+A temporary postponement of an active alarm alert. In v1, snooze should use a fixed 10-minute delay rather than a user-configurable duration. A snoozed alert is a new alert occurrence and gets its own five-minute sound limit.
 _Avoid_: custom snooze rule, theme-owned snooze behavior
+
+**Alarm Recurrence**:
+The repeat pattern that determines which days an alarm is eligible to fire. In v1, alarms should support one-time, daily, weekdays, and weekends recurrence. A one-time alarm represents an exact scheduled date and time; after that occurrence fires or is missed, it should not silently reschedule itself.
+_Avoid_: fully custom day schedule, theme-owned alarm schedule
+
+**Alarm List**:
+The small bounded collection of alarms the user can review and manage on-device. In v1, the list should allow up to five saved alarms.
+_Avoid_: unlimited alarm database, theme-owned alarm list
+
+**Next Alarm**:
+The upcoming enabled alarm occurrence shown as a small secondary indicator on the main clock face. It should include the alarm time and a short recurrence description without competing with the primary time display.
+_Avoid_: alarm dashboard, theme-owned alarm indicator
+
+**Missed Alarm**:
+An alarm occurrence that passed while the device was off or otherwise unable to alert. Missed alarms should not fire unexpectedly on boot.
+_Avoid_: catch-up alarm, surprise boot alarm
 
 **Sync Status**:
 A small visible cue that tells whether the displayed time is recently externally confirmed, locally retained while offline, or not yet trustworthy. It should build trust without becoming the main focus of the clock face.
