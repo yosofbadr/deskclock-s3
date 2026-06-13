@@ -14,6 +14,7 @@ namespace {
 
 lv_obj_t *panel = nullptr;
 lv_obj_t *value_label = nullptr;
+lv_obj_t *date_hint_label = nullptr;
 DateTime editing_time;
 bool use_24_hour_time = true;
 
@@ -238,6 +239,11 @@ void create(lv_obj_t *parent, int32_t width, int32_t height, const lv_font_t *fo
   UiWidgets::setTextColor(value_label, 0x1F2933);
   lv_label_set_text(value_label, "---- -- --");
   lv_obj_align(value_label, LV_ALIGN_CENTER, 0, -36);
+
+  date_hint_label = lv_label_create(panel);
+  UiWidgets::setTextColor(date_hint_label, 0x52616F);
+  lv_label_set_text(date_hint_label, "Y/M/D adjust date");
+  lv_obj_align(date_hint_label, LV_ALIGN_TOP_MID, 0, 82);
 
   lv_obj_t *minus_hour = UiWidgets::button(panel, "-1h", 58, 36);
   lv_obj_align(minus_hour, LV_ALIGN_LEFT_MID, 20, 18);
