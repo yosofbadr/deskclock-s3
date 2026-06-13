@@ -397,6 +397,14 @@ void loop(const DateTime &now)
   last_seen_now = now_seconds;
 
   portENTER_CRITICAL(&alarm_mux);
+  if (active_alert.active && active_alert.sound_allowed) {
+    const int64_t alert_started_seconds = to_epoch_seconds(active_alert.started_at);
+    if (alert_started_seconds >= 0 && now_seconds - alert_started_seconds >= static_cast<int64_t>(kAlarmSoundLimitSeconds)) {
+      active_alert.sound_allowed = false;
+      Serial.printf("AlarmService: alarm %u sound window ended\n", active_alert.alarm.id);
+    }
+  }
+
   if (!active_alert.active) {
     for (size_t index = 0; index < alarm_count; ++index) {
       Alarm &alarm = alarm_list[index];
