@@ -16,6 +16,7 @@ const lv_font_t *view_font = nullptr;
 Alarm editing_alarm;
 bool editing_existing_alarm = false;
 uint8_t editing_alarm_id = 0;
+uint8_t pending_delete_alarm_id = 0;
 
 uint8_t days_in_month(uint16_t year, uint8_t month)
 {
@@ -74,6 +75,7 @@ Alarm *find_alarm_by_id(uint8_t id, Alarm *alarms, size_t count)
 
 void refresh_manager();
 void refresh_editor();
+void refresh_delete_confirmation();
 
 void close_event(lv_event_t *)
 {
@@ -115,8 +117,22 @@ void toggle_event(lv_event_t *event)
 
 void delete_event(lv_event_t *event)
 {
-  const uint8_t id = static_cast<uint8_t>(reinterpret_cast<uintptr_t>(lv_event_get_user_data(event)));
-  AlarmService::removeAlarm(id);
+  pending_delete_alarm_id = static_cast<uint8_t>(reinterpret_cast<uintptr_t>(lv_event_get_user_data(event)));
+  refresh_delete_confirmation();
+}
+
+void confirm_delete_event(lv_event_t *)
+{
+  if (pending_delete_alarm_id != 0) {
+    AlarmService::removeAlarm(pending_delete_alarm_id);
+    pending_delete_alarm_id = 0;
+  }
+  refresh_manager();
+}
+
+void cancel_delete_event(lv_event_t *)
+{
+  pending_delete_alarm_id = 0;
   refresh_manager();
 }
 
@@ -264,6 +280,44 @@ void refresh_manager()
     lv_obj_align(del, LV_ALIGN_TOP_RIGHT, -14, y);
     lv_obj_add_event_cb(del, delete_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<uintptr_t>(alarms[index].id)));
   }
+}
+
+void refresh_delete_confirmation()
+{
+  if (panel == nullptr) {
+    return;
+  }
+
+  lv_obj_clean(panel);
+  draw_header("Delete alarm?");
+
+  Alarm alarms[kMaxAlarms];
+  const size_t count = AlarmService::copyAlarms(alarms, kMaxAlarms);
+  Alarm *alarm = find_alarm_by_id(pending_delete_alarm_id, alarms, count);
+
+  char message[80];
+  if (alarm != nullptr) {
+    char alarm_time[12];
+    TimeSetupView::formatTime(alarm_time, sizeof(alarm_time), alarm->hour, alarm->minute);
+    snprintf(message, sizeof(message), "Delete %s %s?", alarm_time, AlarmService::recurrenceLabel(alarm->recurrence));
+  } else {
+    snprintf(message, sizeof(message), "Delete this alarm?");
+  }
+
+  lv_obj_t *label = lv_label_create(panel);
+  lv_obj_set_style_text_font(label, view_font, 0);
+  lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+  UiWidgets::setTextColor(label, 0x1F2933);
+  lv_label_set_text(label, message);
+  lv_obj_align(label, LV_ALIGN_CENTER, 0, -12);
+
+  lv_obj_t *delete_button = UiWidgets::button(panel, "Delete", 94, 38);
+  lv_obj_align(delete_button, LV_ALIGN_BOTTOM_MID, -56, -18);
+  lv_obj_add_event_cb(delete_button, confirm_delete_event, LV_EVENT_CLICKED, nullptr);
+
+  lv_obj_t *cancel_button = UiWidgets::button(panel, "Cancel", 94, 38);
+  lv_obj_align(cancel_button, LV_ALIGN_BOTTOM_MID, 56, -18);
+  lv_obj_add_event_cb(cancel_button, cancel_delete_event, LV_EVENT_CLICKED, nullptr);
 }
 
 void refresh_editor()
