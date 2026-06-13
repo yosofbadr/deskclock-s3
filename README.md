@@ -98,6 +98,7 @@ pio run -e audio_test
 
 ## On-device verification checklist
 
+A release-readiness summary is available at [`docs/release-readiness.md`](docs/release-readiness.md).
 A printable/fillable test log is available at [`docs/hardware-verification.md`](docs/hardware-verification.md).
 
 After flashing normal firmware, verify:
