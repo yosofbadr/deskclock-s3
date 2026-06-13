@@ -237,6 +237,7 @@ void handle_boot_button()
       boot_button_down_since_ms = now_ms;
       boot_long_press_handled = false;
       if (DeskClock::AlarmService::activeAlert().active) {
+        Serial.println("BOOT: dismissing active alarm");
         DeskClock::AlarmService::dismissActiveAlert();
         boot_long_press_handled = true;
       }
@@ -244,6 +245,7 @@ void handle_boot_button()
   }
 
   if (boot_button_was_down && !boot_long_press_handled && now_ms - boot_button_down_since_ms >= kBootSettingsLongPressMs) {
+    Serial.println("BOOT: long press opening setup");
     DeskClock::TimeSetupView::open();
     boot_long_press_handled = true;
   }
