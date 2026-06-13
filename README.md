@@ -65,6 +65,8 @@ Serial monitor:
 pio device monitor -p /dev/cu.usbmodem2101 -b 115200
 ```
 
+Run the serial monitor in an interactive terminal. Non-interactive shells may fail to initialize PlatformIO's monitor console because it expects a real TTY.
+
 If automatic upload fails with `Failed to connect to ESP32-S3: No serial data received`, put the board in bootloader mode manually and retry upload.
 
 Manual ESP32-S3 bootloader recovery:

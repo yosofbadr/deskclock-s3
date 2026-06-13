@@ -16,7 +16,7 @@ Use this checklist after flashing the normal `waveshare_touch_lcd_3_49` firmware
 ## Preflight
 
 - [ ] `pio run -e waveshare_touch_lcd_3_49` passes.
-- [ ] Serial monitor opens at 115200 baud.
+- [ ] Serial monitor opens at 115200 baud in an interactive terminal.
 - [ ] Serial boot log includes `DeskClock S3: booting RTC + LVGL shell (0.1.0-dev)`.
 - [ ] Display backlight turns on.
 - [ ] Clock face is visible in landscape orientation.
