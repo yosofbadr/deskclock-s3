@@ -311,8 +311,14 @@ bool save_alarms()
 bool load_alarms()
 {
   Preferences preferences;
-  if (!preferences.begin(kAlarmStoreNamespace, true)) {
-    Serial.println("AlarmService: no readable alarm storage yet");
+  if (!preferences.begin(kAlarmStoreNamespace, false)) {
+    Serial.println("AlarmService: alarm storage unavailable");
+    return false;
+  }
+
+  if (!preferences.isKey(kAlarmStoreKey)) {
+    preferences.end();
+    Serial.println("AlarmService: no saved alarms");
     return false;
   }
 
@@ -321,6 +327,7 @@ bool load_alarms()
   preferences.end();
 
   if (bytes != sizeof(store) || store.magic != kAlarmStoreMagic || store.version != kAlarmStoreVersion || store.count > kMaxAlarms) {
+    Serial.println("AlarmService: ignoring invalid alarm storage");
     return false;
   }
 
