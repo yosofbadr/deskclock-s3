@@ -1,6 +1,7 @@
 #include "AlarmService.h"
 
 #include <Arduino.h>
+#include <Preferences.h>
 #include <string.h>
 
 #include "freertos/FreeRTOS.h"
@@ -15,6 +16,19 @@ size_t alarm_count = 0;
 uint8_t next_alarm_id = 1;
 int64_t last_seen_now = -1;
 ActiveAlarmAlert active_alert;
+
+constexpr uint32_t kAlarmStoreMagic = 0xD35C10C1UL;
+constexpr uint16_t kAlarmStoreVersion = 1;
+constexpr const char *kAlarmStoreNamespace = "deskclock";
+constexpr const char *kAlarmStoreKey = "alarms";
+
+struct PersistedAlarmStore {
+  uint32_t magic = kAlarmStoreMagic;
+  uint16_t version = kAlarmStoreVersion;
+  uint8_t count = 0;
+  uint8_t next_id = 1;
+  Alarm alarms[kMaxAlarms];
+};
 
 bool is_leap_year(uint16_t year)
 {
@@ -240,14 +254,98 @@ bool same_alarm_minute(const Alarm &alarm, const DateTime &now)
   return recurrence_allows_week(alarm.recurrence, now.week) && alarm.hour == now.hour && alarm.minute == now.minute;
 }
 
-void disable_one_time_alarm_unlocked(uint8_t id)
+bool disable_one_time_alarm_unlocked(uint8_t id)
 {
   for (size_t index = 0; index < alarm_count; ++index) {
     if (alarm_list[index].id == id && alarm_list[index].recurrence == AlarmRecurrence::Once) {
       alarm_list[index].enabled = false;
-      return;
+      return true;
     }
   }
+  return false;
+}
+
+bool persist_alarm_snapshot(const Alarm *alarms, size_t count, uint8_t next_id)
+{
+  PersistedAlarmStore store;
+  store.count = static_cast<uint8_t>(count > kMaxAlarms ? kMaxAlarms : count);
+  store.next_id = next_id == 0 ? 1 : next_id;
+  for (size_t index = 0; index < store.count; ++index) {
+    store.alarms[index] = alarms[index];
+    store.alarms[index].development_seed = false;
+  }
+
+  Preferences preferences;
+  if (!preferences.begin(kAlarmStoreNamespace, false)) {
+    Serial.println("AlarmService: failed to open alarm storage for write");
+    return false;
+  }
+  const size_t written = preferences.putBytes(kAlarmStoreKey, &store, sizeof(store));
+  preferences.end();
+  if (written != sizeof(store)) {
+    Serial.println("AlarmService: failed to persist alarms");
+    return false;
+  }
+  return true;
+}
+
+bool save_alarms()
+{
+  Alarm snapshot[kMaxAlarms];
+  size_t snapshot_count = 0;
+  uint8_t snapshot_next_id = 1;
+
+  portENTER_CRITICAL(&alarm_mux);
+  for (size_t index = 0; index < alarm_count && snapshot_count < kMaxAlarms; ++index) {
+    if (alarm_list[index].development_seed) {
+      continue;
+    }
+    snapshot[snapshot_count++] = alarm_list[index];
+  }
+  snapshot_next_id = next_alarm_id;
+  portEXIT_CRITICAL(&alarm_mux);
+
+  return persist_alarm_snapshot(snapshot, snapshot_count, snapshot_next_id);
+}
+
+bool load_alarms()
+{
+  Preferences preferences;
+  if (!preferences.begin(kAlarmStoreNamespace, true)) {
+    Serial.println("AlarmService: no readable alarm storage yet");
+    return false;
+  }
+
+  PersistedAlarmStore store;
+  const size_t bytes = preferences.getBytes(kAlarmStoreKey, &store, sizeof(store));
+  preferences.end();
+
+  if (bytes != sizeof(store) || store.magic != kAlarmStoreMagic || store.version != kAlarmStoreVersion || store.count > kMaxAlarms) {
+    return false;
+  }
+
+  size_t loaded = 0;
+  portENTER_CRITICAL(&alarm_mux);
+  alarm_count = 0;
+  next_alarm_id = store.next_id == 0 ? 1 : store.next_id;
+  for (size_t index = 0; index < store.count; ++index) {
+    Alarm alarm = store.alarms[index];
+    alarm.development_seed = false;
+    if (alarm.id == 0 || !append_alarm_unlocked(alarm)) {
+      continue;
+    }
+    loaded++;
+    if (alarm.id >= next_alarm_id) {
+      next_alarm_id = alarm.id + 1;
+      if (next_alarm_id == 0) {
+        next_alarm_id = 1;
+      }
+    }
+  }
+  portEXIT_CRITICAL(&alarm_mux);
+
+  Serial.printf("AlarmService: loaded %u persisted alarms\n", static_cast<unsigned>(loaded));
+  return true;
 }
 
 size_t copy_alarm_list(Alarm *destination, size_t capacity)
@@ -316,8 +414,11 @@ void begin(const DateTime &now)
   active_alert = ActiveAlarmAlert();
   portEXIT_CRITICAL(&alarm_mux);
 
+  const bool loaded = load_alarms();
   last_seen_now = to_epoch_seconds(now);
-  seed_development_alarm(now);
+  if (!loaded || count() == 0) {
+    seed_development_alarm(now);
+  }
 }
 
 void loop(const DateTime &now)
@@ -344,8 +445,13 @@ void loop(const DateTime &now)
       active_alert.alarm = alarm;
       active_alert.started_at = now;
       active_alert.sound_allowed = true;
-      disable_one_time_alarm_unlocked(alarm.id);
+      const bool disabled_one_time = disable_one_time_alarm_unlocked(alarm.id);
       Serial.printf("AlarmService: alarm %u active at %02u:%02u\n", alarm.id, now.hour, now.minute);
+      if (disabled_one_time) {
+        portEXIT_CRITICAL(&alarm_mux);
+        save_alarms();
+        return;
+      }
       break;
     }
   }
@@ -433,6 +539,9 @@ bool addAlarm(const Alarm &alarm, uint8_t *created_id)
   if (added && created_id != nullptr) {
     *created_id = copy.id;
   }
+  if (added && !copy.development_seed) {
+    save_alarms();
+  }
   return added;
 }
 
@@ -455,6 +564,9 @@ bool updateAlarm(uint8_t id, const Alarm &alarm)
     break;
   }
   portEXIT_CRITICAL(&alarm_mux);
+  if (updated) {
+    save_alarms();
+  }
   return updated;
 }
 
@@ -474,6 +586,9 @@ bool removeAlarm(uint8_t id)
     break;
   }
   portEXIT_CRITICAL(&alarm_mux);
+  if (removed) {
+    save_alarms();
+  }
   return removed;
 }
 
@@ -489,6 +604,9 @@ bool setEnabled(uint8_t id, bool enabled)
     }
   }
   portEXIT_CRITICAL(&alarm_mux);
+  if (changed) {
+    save_alarms();
+  }
   return changed;
 }
 
