@@ -78,10 +78,14 @@ pio run -e audio_test -t upload
 After flashing normal firmware, verify:
 
 1. Clock face shows retained RTC time and date.
-2. Long-press BOOT opens setup.
-3. Alarm list opens from the next-alarm area.
-4. Add an alarm a few minutes ahead using the rollers and recurrence buttons.
-5. Reboot and confirm the alarm persists.
-6. Let the alarm fire and confirm visual alert plus audio.
-7. Test Snooze, then Dismiss.
-8. Test BOOT while an alert is active and confirm it dismisses the alarm.
+2. Short-press BOOT and confirm serial logs `BOOT: pressed` and `BOOT: released after ... ms`.
+3. Long-press BOOT for at least 1.2 seconds and confirm serial log `BOOT: long press opening setup` plus setup UI opens.
+4. Alarm list opens from the next-alarm area.
+5. Add an alarm a few minutes ahead using the rollers and recurrence buttons.
+6. Reboot and confirm the alarm persists.
+7. Let the alarm fire and confirm visual alert plus audio.
+8. Tap Dismiss and confirm the alert does not immediately re-open during the same minute.
+9. Create/fire another alarm, tap Snooze, and confirm the next-alarm indicator shows the snoozed occurrence.
+10. Let the snoozed alarm fire and confirm the sound window restarts.
+11. Test BOOT while an alert is active and confirm it logs `BOOT: dismissing active alarm` and dismisses the alarm.
+12. Optional edge check: fill all five saved alarm slots, fire one, tap Snooze, and confirm Snooze still works without needing a free saved-alarm slot.
