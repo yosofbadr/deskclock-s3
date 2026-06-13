@@ -205,6 +205,7 @@ void loop()
 
 #else
 
+#include "app/AlarmService.h"
 #include "app/TimeService.h"
 #include "lvgl_port.h"
 #include "src/lcd_bl_bsp/lcd_bl_pwm_bsp.h"
@@ -219,6 +220,7 @@ void setup()
 
   i2c_master_Init();
   DeskClock::TimeService::begin();
+  DeskClock::AlarmService::begin(DeskClock::TimeService::snapshot().now);
   lvgl_port_init();
   lcd_bl_pwm_bsp_init(LCD_PWM_MODE_255);
 
@@ -228,6 +230,7 @@ void setup()
 void loop()
 {
   DeskClock::TimeService::loop();
+  DeskClock::AlarmService::loop(DeskClock::TimeService::snapshot().now);
   delay(50);
 }
 

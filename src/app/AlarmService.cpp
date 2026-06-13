@@ -1,0 +1,474 @@
+#include "AlarmService.h"
+
+#include <Arduino.h>
+#include <string.h>
+
+#include "freertos/FreeRTOS.h"
+#include "freertos/portmacro.h"
+
+namespace DeskClock {
+namespace {
+
+portMUX_TYPE alarm_mux = portMUX_INITIALIZER_UNLOCKED;
+Alarm alarm_list[kMaxAlarms];
+size_t alarm_count = 0;
+uint8_t next_alarm_id = 1;
+int64_t last_seen_now = -1;
+
+bool is_leap_year(uint16_t year)
+{
+  return ((year % 4U) == 0U && (year % 100U) != 0U) || ((year % 400U) == 0U);
+}
+
+uint8_t days_in_month(uint16_t year, uint8_t month)
+{
+  static constexpr uint8_t days[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+  if (month < 1 || month > 12) {
+    return 0;
+  }
+  if (month == 2 && is_leap_year(year)) {
+    return 29;
+  }
+  return days[month - 1];
+}
+
+bool is_valid_date(uint16_t year, uint8_t month, uint8_t day)
+{
+  return year >= 2024 && month >= 1 && month <= 12 && day >= 1 && day <= days_in_month(year, month);
+}
+
+uint8_t day_of_week(uint16_t year, uint8_t month, uint8_t day)
+{
+  uint32_t y = year;
+  uint32_t m = month;
+  if (m < 3) {
+    m += 12;
+    y--;
+  }
+
+  uint32_t val = (day + ((m + 1U) * 26U) / 10U + y + y / 4U + 6U * (y / 100U) + y / 400U) % 7U;
+  if (val == 0) {
+    val = 7;
+  }
+  return static_cast<uint8_t>(val - 1U); // 0 = Sunday
+}
+
+// Howard Hinnant's civil calendar algorithms. Returns days since 1970-01-01.
+int64_t days_from_civil(int64_t year, unsigned month, unsigned day)
+{
+  year -= month <= 2;
+  const int64_t era = (year >= 0 ? year : year - 399) / 400;
+  const unsigned yoe = static_cast<unsigned>(year - era * 400);
+  const unsigned doy = (153 * (month + (month > 2 ? -3 : 9)) + 2) / 5 + day - 1;
+  const unsigned doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+  return era * 146097 + static_cast<int64_t>(doe) - 719468;
+}
+
+void civil_from_days(int64_t z, uint16_t &year, uint8_t &month, uint8_t &day)
+{
+  z += 719468;
+  const int64_t era = (z >= 0 ? z : z - 146096) / 146097;
+  const unsigned doe = static_cast<unsigned>(z - era * 146097);
+  const unsigned yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+  int64_t y = static_cast<int64_t>(yoe) + era * 400;
+  const unsigned doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+  const unsigned mp = (5 * doy + 2) / 153;
+  const unsigned d = doy - (153 * mp + 2) / 5 + 1;
+  const unsigned m = mp + (mp < 10 ? 3 : -9);
+  y += (m <= 2);
+
+  year = static_cast<uint16_t>(y);
+  month = static_cast<uint8_t>(m);
+  day = static_cast<uint8_t>(d);
+}
+
+int64_t to_epoch_seconds(const DateTime &dt)
+{
+  if (!dt.valid || !is_valid_date(dt.year, dt.month, dt.day)) {
+    return -1;
+  }
+  return (days_from_civil(dt.year, dt.month, dt.day) * 86400LL) +
+         (static_cast<int64_t>(dt.hour) * 3600LL) +
+         (static_cast<int64_t>(dt.minute) * 60LL) +
+         static_cast<int64_t>(dt.second);
+}
+
+DateTime from_epoch_seconds(int64_t seconds)
+{
+  DateTime dt;
+  if (seconds < 0) {
+    return dt;
+  }
+
+  const int64_t days = seconds / 86400LL;
+  const int64_t seconds_of_day = seconds % 86400LL;
+  civil_from_days(days, dt.year, dt.month, dt.day);
+  dt.hour = static_cast<uint8_t>(seconds_of_day / 3600LL);
+  dt.minute = static_cast<uint8_t>((seconds_of_day % 3600LL) / 60LL);
+  dt.second = static_cast<uint8_t>(seconds_of_day % 60LL);
+  dt.week = day_of_week(dt.year, dt.month, dt.day);
+  dt.valid = true;
+  return dt;
+}
+
+bool is_weekday(uint8_t week)
+{
+  return week >= 1 && week <= 5;
+}
+
+bool is_weekend(uint8_t week)
+{
+  return week == 0 || week == 6;
+}
+
+bool recurrence_allows_week(AlarmRecurrence recurrence, uint8_t week)
+{
+  switch (recurrence) {
+  case AlarmRecurrence::Daily:
+    return true;
+  case AlarmRecurrence::Weekdays:
+    return is_weekday(week);
+  case AlarmRecurrence::Weekends:
+    return is_weekend(week);
+  case AlarmRecurrence::Once:
+  default:
+    return false;
+  }
+}
+
+DateTime alarm_time_on_date(const DateTime &date, const Alarm &alarm)
+{
+  DateTime candidate = date;
+  candidate.hour = alarm.hour;
+  candidate.minute = alarm.minute;
+  candidate.second = 0;
+  candidate.valid = date.valid;
+  return candidate;
+}
+
+bool occurrence_for_alarm(const Alarm &alarm, const DateTime &now, AlarmOccurrence &occurrence)
+{
+  if (!alarm.enabled || !now.valid) {
+    return false;
+  }
+
+  const int64_t now_seconds = to_epoch_seconds(now);
+  if (now_seconds < 0) {
+    return false;
+  }
+
+  int64_t candidate_seconds = -1;
+  DateTime candidate;
+
+  if (alarm.recurrence == AlarmRecurrence::Once) {
+    candidate.year = alarm.year;
+    candidate.month = alarm.month;
+    candidate.day = alarm.day;
+    candidate.hour = alarm.hour;
+    candidate.minute = alarm.minute;
+    candidate.second = 0;
+    candidate.valid = is_valid_date(candidate.year, candidate.month, candidate.day);
+    if (candidate.valid) {
+      candidate.week = day_of_week(candidate.year, candidate.month, candidate.day);
+    }
+    candidate_seconds = to_epoch_seconds(candidate);
+    if (candidate_seconds <= now_seconds) {
+      return false;
+    }
+  } else {
+    for (uint8_t day_offset = 0; day_offset < 8; ++day_offset) {
+      DateTime day = from_epoch_seconds((now_seconds / 86400LL + day_offset) * 86400LL);
+      if (!recurrence_allows_week(alarm.recurrence, day.week)) {
+        continue;
+      }
+
+      candidate = alarm_time_on_date(day, alarm);
+      candidate_seconds = to_epoch_seconds(candidate);
+      if (candidate_seconds > now_seconds) {
+        break;
+      }
+      candidate_seconds = -1;
+    }
+
+    if (candidate_seconds <= now_seconds) {
+      return false;
+    }
+  }
+
+  occurrence.exists = true;
+  occurrence.alarm = alarm;
+  occurrence.at = candidate;
+  occurrence.seconds_until = static_cast<uint32_t>(candidate_seconds - now_seconds);
+  return true;
+}
+
+bool is_valid_alarm(const Alarm &alarm)
+{
+  if (alarm.hour > 23 || alarm.minute > 59) {
+    return false;
+  }
+  if (alarm.recurrence == AlarmRecurrence::Once) {
+    return is_valid_date(alarm.year, alarm.month, alarm.day);
+  }
+  return true;
+}
+
+uint8_t allocate_alarm_id()
+{
+  if (next_alarm_id == 0) {
+    next_alarm_id = 1;
+  }
+  return next_alarm_id++;
+}
+
+bool append_alarm_unlocked(const Alarm &alarm)
+{
+  if (alarm_count >= kMaxAlarms || !is_valid_alarm(alarm)) {
+    return false;
+  }
+  alarm_list[alarm_count++] = alarm;
+  return true;
+}
+
+size_t copy_alarm_list(Alarm *destination, size_t capacity)
+{
+  if (destination == nullptr || capacity == 0) {
+    return 0;
+  }
+
+  portENTER_CRITICAL(&alarm_mux);
+  const size_t copied = alarm_count < capacity ? alarm_count : capacity;
+  memcpy(destination, alarm_list, copied * sizeof(Alarm));
+  portEXIT_CRITICAL(&alarm_mux);
+  return copied;
+}
+
+void seed_development_alarm(const DateTime &now)
+{
+  if (!now.valid) {
+    return;
+  }
+
+  const int64_t now_seconds = to_epoch_seconds(now);
+  if (now_seconds < 0) {
+    return;
+  }
+
+  const DateTime fire_at = from_epoch_seconds(((now_seconds + 2 * 60 + 59) / 60) * 60);
+  Alarm alarm;
+  alarm.enabled = true;
+  alarm.recurrence = AlarmRecurrence::Once;
+  alarm.year = fire_at.year;
+  alarm.month = fire_at.month;
+  alarm.day = fire_at.day;
+  alarm.hour = fire_at.hour;
+  alarm.minute = fire_at.minute;
+  alarm.development_seed = true;
+
+  bool added = false;
+  portENTER_CRITICAL(&alarm_mux);
+  if (alarm_count == 0) {
+    alarm.id = allocate_alarm_id();
+    added = append_alarm_unlocked(alarm);
+  }
+  portEXIT_CRITICAL(&alarm_mux);
+
+  if (added) {
+    Serial.printf(
+        "AlarmService: seeded temporary development alarm for %04u-%02u-%02u %02u:%02u\n",
+        alarm.year,
+        alarm.month,
+        alarm.day,
+        alarm.hour,
+        alarm.minute);
+  }
+}
+
+} // namespace
+
+namespace AlarmService {
+
+void begin(const DateTime &now)
+{
+  portENTER_CRITICAL(&alarm_mux);
+  alarm_count = 0;
+  next_alarm_id = 1;
+  portEXIT_CRITICAL(&alarm_mux);
+
+  last_seen_now = to_epoch_seconds(now);
+  seed_development_alarm(now);
+}
+
+void loop(const DateTime &now)
+{
+  if (!now.valid) {
+    return;
+  }
+
+  const int64_t now_seconds = to_epoch_seconds(now);
+  if (now_seconds < 0 || now_seconds == last_seen_now) {
+    return;
+  }
+  last_seen_now = now_seconds;
+
+  Alarm snapshot[kMaxAlarms];
+  const size_t snapshot_count = copy_alarm_list(snapshot, kMaxAlarms);
+
+  for (size_t index = 0; index < snapshot_count; ++index) {
+    const Alarm &alarm = snapshot[index];
+    if (!alarm.enabled || alarm.recurrence != AlarmRecurrence::Once) {
+      continue;
+    }
+
+    DateTime occurrence = {};
+    occurrence.year = alarm.year;
+    occurrence.month = alarm.month;
+    occurrence.day = alarm.day;
+    occurrence.hour = alarm.hour;
+    occurrence.minute = alarm.minute;
+    occurrence.second = 0;
+    occurrence.valid = is_valid_date(occurrence.year, occurrence.month, occurrence.day);
+    if (occurrence.valid) {
+      occurrence.week = day_of_week(occurrence.year, occurrence.month, occurrence.day);
+    }
+
+    const int64_t occurrence_seconds = to_epoch_seconds(occurrence);
+    if (occurrence_seconds >= 0 && occurrence_seconds <= now_seconds && setEnabled(alarm.id, false)) {
+      Serial.printf(
+          "AlarmService: one-time alarm %u reached %04u-%02u-%02u %02u:%02u; disabling until alert UI exists\n",
+          alarm.id,
+          alarm.year,
+          alarm.month,
+          alarm.day,
+          alarm.hour,
+          alarm.minute);
+    }
+  }
+}
+
+bool addAlarm(const Alarm &alarm, uint8_t *created_id)
+{
+  if (!is_valid_alarm(alarm)) {
+    return false;
+  }
+
+  Alarm copy = alarm;
+  bool added = false;
+  portENTER_CRITICAL(&alarm_mux);
+  if (alarm_count < kMaxAlarms) {
+    copy.id = allocate_alarm_id();
+    added = append_alarm_unlocked(copy);
+  }
+  portEXIT_CRITICAL(&alarm_mux);
+
+  if (added && created_id != nullptr) {
+    *created_id = copy.id;
+  }
+  return added;
+}
+
+bool updateAlarm(uint8_t id, const Alarm &alarm)
+{
+  if (id == 0 || !is_valid_alarm(alarm)) {
+    return false;
+  }
+
+  bool updated = false;
+  portENTER_CRITICAL(&alarm_mux);
+  for (size_t index = 0; index < alarm_count; ++index) {
+    if (alarm_list[index].id != id) {
+      continue;
+    }
+    Alarm copy = alarm;
+    copy.id = id;
+    alarm_list[index] = copy;
+    updated = true;
+    break;
+  }
+  portEXIT_CRITICAL(&alarm_mux);
+  return updated;
+}
+
+bool removeAlarm(uint8_t id)
+{
+  bool removed = false;
+  portENTER_CRITICAL(&alarm_mux);
+  for (size_t index = 0; index < alarm_count; ++index) {
+    if (alarm_list[index].id != id) {
+      continue;
+    }
+    for (size_t move = index; move + 1 < alarm_count; ++move) {
+      alarm_list[move] = alarm_list[move + 1];
+    }
+    alarm_count--;
+    removed = true;
+    break;
+  }
+  portEXIT_CRITICAL(&alarm_mux);
+  return removed;
+}
+
+bool setEnabled(uint8_t id, bool enabled)
+{
+  bool changed = false;
+  portENTER_CRITICAL(&alarm_mux);
+  for (size_t index = 0; index < alarm_count; ++index) {
+    if (alarm_list[index].id == id) {
+      alarm_list[index].enabled = enabled;
+      changed = true;
+      break;
+    }
+  }
+  portEXIT_CRITICAL(&alarm_mux);
+  return changed;
+}
+
+size_t count()
+{
+  portENTER_CRITICAL(&alarm_mux);
+  const size_t value = alarm_count;
+  portEXIT_CRITICAL(&alarm_mux);
+  return value;
+}
+
+size_t copyAlarms(Alarm *destination, size_t capacity)
+{
+  return copy_alarm_list(destination, capacity);
+}
+
+AlarmOccurrence nextAlarm(const DateTime &now)
+{
+  Alarm snapshot[kMaxAlarms];
+  const size_t snapshot_count = copy_alarm_list(snapshot, kMaxAlarms);
+
+  AlarmOccurrence best;
+  for (size_t index = 0; index < snapshot_count; ++index) {
+    AlarmOccurrence candidate;
+    if (!occurrence_for_alarm(snapshot[index], now, candidate)) {
+      continue;
+    }
+    if (!best.exists || candidate.seconds_until < best.seconds_until) {
+      best = candidate;
+    }
+  }
+  return best;
+}
+
+const char *recurrenceLabel(AlarmRecurrence recurrence)
+{
+  switch (recurrence) {
+  case AlarmRecurrence::Once:
+    return "once";
+  case AlarmRecurrence::Daily:
+    return "daily";
+  case AlarmRecurrence::Weekdays:
+    return "weekdays";
+  case AlarmRecurrence::Weekends:
+    return "weekends";
+  default:
+    return "alarm";
+  }
+}
+
+} // namespace AlarmService
+} // namespace DeskClock

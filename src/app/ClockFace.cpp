@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 
+#include "AlarmService.h"
 #include "TimeService.h"
 #include "lvgl.h"
 
@@ -11,6 +12,7 @@ lv_obj_t *time_label = nullptr;
 lv_obj_t *date_label = nullptr;
 lv_obj_t *seconds_label = nullptr;
 lv_obj_t *status_label = nullptr;
+lv_obj_t *next_alarm_label = nullptr;
 lv_obj_t *sync_dot = nullptr;
 
 const lv_font_t *time_font()
@@ -92,6 +94,25 @@ void realign_time_details()
   lv_obj_align_to(seconds_label, time_label, LV_ALIGN_OUT_RIGHT_MID, 10, 8);
 }
 
+void update_next_alarm_label(const DeskClock::DateTime &now)
+{
+  DeskClock::AlarmOccurrence next = DeskClock::AlarmService::nextAlarm(now);
+  if (!next.exists) {
+    lv_label_set_text(next_alarm_label, "No alarm");
+    return;
+  }
+
+  char buffer[32];
+  snprintf(
+      buffer,
+      sizeof(buffer),
+      "Alarm %02u:%02u %s",
+      next.at.hour,
+      next.at.minute,
+      DeskClock::AlarmService::recurrenceLabel(next.alarm.recurrence));
+  lv_label_set_text(next_alarm_label, buffer);
+}
+
 void update_clock_from_time_service(lv_timer_t *)
 {
   const DeskClock::TimeSnapshot snapshot = DeskClock::TimeService::snapshot();
@@ -102,6 +123,7 @@ void update_clock_from_time_service(lv_timer_t *)
     lv_label_set_text(date_label, "Time not set");
     lv_label_set_text(seconds_label, "unreliable");
     lv_label_set_text(status_label, status_text(snapshot));
+    lv_label_set_text(next_alarm_label, "No alarm");
     lv_obj_set_style_bg_color(sync_dot, lv_color_hex(sync_dot_color(DeskClock::SyncState::Unreliable, blink)), 0);
     realign_time_details();
     return;
@@ -126,6 +148,7 @@ void update_clock_from_time_service(lv_timer_t *)
   lv_label_set_text(seconds_label, seconds_buffer);
 
   lv_label_set_text(status_label, status_text(snapshot));
+  update_next_alarm_label(snapshot.now);
   lv_obj_set_style_bg_color(sync_dot, lv_color_hex(sync_dot_color(snapshot.sync_state, blink)), 0);
   realign_time_details();
 }
@@ -204,6 +227,12 @@ extern "C" void clock_face_create(void)
   lv_obj_set_style_border_color(sync_dot, lv_color_hex(0xFFFFFF), 0);
   lv_obj_set_style_border_width(sync_dot, 2, 0);
   lv_obj_align(sync_dot, LV_ALIGN_TOP_RIGHT, -18, 18);
+
+  next_alarm_label = lv_label_create(clock_panel);
+  lv_obj_set_style_text_font(next_alarm_label, body_font(), 0);
+  set_text_color(next_alarm_label, 0x52616F);
+  lv_label_set_text(next_alarm_label, "No alarm");
+  lv_obj_align(next_alarm_label, LV_ALIGN_BOTTOM_LEFT, 28, -12);
 
   status_label = lv_label_create(clock_panel);
   lv_obj_set_style_text_font(status_label, body_font(), 0);
