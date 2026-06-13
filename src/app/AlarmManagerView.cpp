@@ -182,35 +182,30 @@ void adjust_date_event(lv_event_t *event)
   refresh_editor();
 }
 
-void cycle_recurrence_event(lv_event_t *)
+void set_once_date_from_current_time()
 {
-  switch (editing_alarm.recurrence) {
-  case AlarmRecurrence::Once:
-    editing_alarm.recurrence = AlarmRecurrence::Daily;
-    break;
-  case AlarmRecurrence::Daily:
-    editing_alarm.recurrence = AlarmRecurrence::Weekdays;
-    break;
-  case AlarmRecurrence::Weekdays:
-    editing_alarm.recurrence = AlarmRecurrence::Weekends;
-    break;
-  case AlarmRecurrence::Weekends:
-  default:
-    editing_alarm.recurrence = AlarmRecurrence::Once;
-    DateTime now = TimeService::snapshot().now;
-    if (now.valid) {
-      editing_alarm.year = now.year;
-      editing_alarm.month = now.month;
-      editing_alarm.day = now.day;
-      if (editing_alarm.hour < now.hour || (editing_alarm.hour == now.hour && editing_alarm.minute <= now.minute)) {
-        adjust_date_by_days(editing_alarm.year, editing_alarm.month, editing_alarm.day, 1);
-      }
-    } else {
-      editing_alarm.year = 2026;
-      editing_alarm.month = 1;
-      editing_alarm.day = 1;
+  DateTime now = TimeService::snapshot().now;
+  if (now.valid) {
+    editing_alarm.year = now.year;
+    editing_alarm.month = now.month;
+    editing_alarm.day = now.day;
+    if (editing_alarm.hour < now.hour || (editing_alarm.hour == now.hour && editing_alarm.minute <= now.minute)) {
+      adjust_date_by_days(editing_alarm.year, editing_alarm.month, editing_alarm.day, 1);
     }
-    break;
+  } else {
+    editing_alarm.year = 2026;
+    editing_alarm.month = 1;
+    editing_alarm.day = 1;
+  }
+}
+
+void recurrence_button_event(lv_event_t *event)
+{
+  time_roller_event(nullptr);
+  const AlarmRecurrence recurrence = static_cast<AlarmRecurrence>(reinterpret_cast<uintptr_t>(lv_event_get_user_data(event)));
+  editing_alarm.recurrence = recurrence;
+  if (editing_alarm.recurrence == AlarmRecurrence::Once) {
+    set_once_date_from_current_time();
   }
   refresh_editor();
 }
@@ -374,9 +369,35 @@ void refresh_editor()
     lv_obj_add_state(date_up, LV_STATE_DISABLED);
   }
 
-  lv_obj_t *recurrence = UiWidgets::button(panel, "Repeat", 82, 34);
-  lv_obj_align(recurrence, LV_ALIGN_BOTTOM_LEFT, 14, -12);
-  lv_obj_add_event_cb(recurrence, cycle_recurrence_event, LV_EVENT_CLICKED, nullptr);
+  lv_obj_t *once = UiWidgets::button(panel, "Once", 72, 28);
+  lv_obj_align(once, LV_ALIGN_BOTTOM_LEFT, 12, -48);
+  lv_obj_add_event_cb(once, recurrence_button_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<uintptr_t>(AlarmRecurrence::Once)));
+  lv_obj_t *daily = UiWidgets::button(panel, "Daily", 72, 28);
+  lv_obj_align(daily, LV_ALIGN_BOTTOM_LEFT, 90, -48);
+  lv_obj_add_event_cb(daily, recurrence_button_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<uintptr_t>(AlarmRecurrence::Daily)));
+  lv_obj_t *weekdays = UiWidgets::button(panel, "Week", 72, 28);
+  lv_obj_align(weekdays, LV_ALIGN_BOTTOM_LEFT, 168, -48);
+  lv_obj_add_event_cb(weekdays, recurrence_button_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<uintptr_t>(AlarmRecurrence::Weekdays)));
+  lv_obj_t *weekends = UiWidgets::button(panel, "End", 72, 28);
+  lv_obj_align(weekends, LV_ALIGN_BOTTOM_LEFT, 246, -48);
+  lv_obj_add_event_cb(weekends, recurrence_button_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<uintptr_t>(AlarmRecurrence::Weekends)));
+
+  switch (editing_alarm.recurrence) {
+  case AlarmRecurrence::Once:
+    lv_obj_add_state(once, LV_STATE_CHECKED);
+    break;
+  case AlarmRecurrence::Daily:
+    lv_obj_add_state(daily, LV_STATE_CHECKED);
+    break;
+  case AlarmRecurrence::Weekdays:
+    lv_obj_add_state(weekdays, LV_STATE_CHECKED);
+    break;
+  case AlarmRecurrence::Weekends:
+  default:
+    lv_obj_add_state(weekends, LV_STATE_CHECKED);
+    break;
+  }
+
   lv_obj_t *save = UiWidgets::button(panel, "Save", 74, 34);
   lv_obj_align(save, LV_ALIGN_BOTTOM_MID, 0, -12);
   lv_obj_add_event_cb(save, save_editor_event, LV_EVENT_CLICKED, nullptr);
