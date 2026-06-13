@@ -223,6 +223,7 @@ void update_next_alarm_label(const DeskClock::DateTime &now)
 
 void refresh_alarm_manager();
 void refresh_alarm_editor();
+void append_wifi_password_event(lv_event_t *event);
 
 DeskClock::Alarm *find_alarm_by_id(uint8_t id, DeskClock::Alarm *alarms, size_t count)
 {
@@ -241,6 +242,15 @@ lv_obj_t *create_button(lv_obj_t *parent, const char *text, int32_t width, int32
   lv_obj_t *label = lv_label_create(button);
   lv_label_set_text(label, text);
   lv_obj_center(label);
+  return button;
+}
+
+lv_obj_t *create_password_key(lv_obj_t *parent, char value, int32_t x, int32_t y)
+{
+  char label[2] = {value, '\0'};
+  lv_obj_t *button = create_button(parent, label, 30, 24);
+  lv_obj_align(button, LV_ALIGN_TOP_LEFT, x, y);
+  lv_obj_add_event_cb(button, append_wifi_password_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(value)));
   return button;
 }
 
@@ -1101,15 +1111,18 @@ extern "C" void clock_face_create(void)
   lv_obj_align(select_three, LV_ALIGN_RIGHT_MID, -52, 36);
   lv_obj_add_event_cb(select_three, select_scanned_wifi_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(2)));
 
-  lv_obj_t *pass_a = create_button(network_panel, "a", 36, 28);
-  lv_obj_align(pass_a, LV_ALIGN_LEFT_MID, 18, 70);
-  lv_obj_add_event_cb(pass_a, append_wifi_password_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>('a')));
-  lv_obj_t *pass_one = create_button(network_panel, "1", 36, 28);
-  lv_obj_align(pass_one, LV_ALIGN_LEFT_MID, 62, 70);
-  lv_obj_add_event_cb(pass_one, append_wifi_password_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>('1')));
-  lv_obj_t *pass_dash = create_button(network_panel, "-", 36, 28);
-  lv_obj_align(pass_dash, LV_ALIGN_LEFT_MID, 106, 70);
-  lv_obj_add_event_cb(pass_dash, append_wifi_password_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>('-')));
+  static constexpr char row_one[] = "abcdef";
+  static constexpr char row_two[] = "ghijkl";
+  static constexpr char row_three[] = "123456";
+  for (uint8_t index = 0; index < 6; ++index) {
+    create_password_key(network_panel, row_one[index], 30 + (index * 34), 70);
+    create_password_key(network_panel, row_two[index], 30 + (index * 34), 96);
+    create_password_key(network_panel, row_three[index], 30 + (index * 34), 122);
+  }
+  create_password_key(network_panel, '-', 234, 70);
+  create_password_key(network_panel, '_', 234, 96);
+  create_password_key(network_panel, '!', 234, 122);
+
   lv_obj_t *pass_back = create_button(network_panel, "Bk", 44, 28);
   lv_obj_align(pass_back, LV_ALIGN_RIGHT_MID, -72, 70);
   lv_obj_add_event_cb(pass_back, backspace_wifi_password_event, LV_EVENT_CLICKED, nullptr);
