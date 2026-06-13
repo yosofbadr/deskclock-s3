@@ -23,23 +23,65 @@ Optional connected features should be framed as opt-in extensions:
 - microphone/speaker interaction
 - LLM integration
 
-## Current milestone
+## Current firmware behavior
 
-The current firmware brings up the board display with LVGL in landscape orientation and shows an RTC-backed clock-shell layout:
+The firmware currently brings up a landscape LVGL desk clock with:
 
-- neutral theme asset placeholder on the left
-- large RTC-backed time area on the right
-- date line
-- sync status dot for local/offline time
+- neutral theme/settings placeholder on the left
+- large RTC-backed time display on the right
+- date line and sync status dot
+- next-alarm indicator on the clock face
+- on-device time setup, Wi-Fi setup, brightness settings, and alarm management
+- persisted settings and alarms using ESP32 local storage
+- alarm audio through the board speaker when enabled
+
+Alarm behavior implemented so far:
+
+- up to five saved alarms
+- recurrence choices: once, daily, weekdays, weekends
+- hour/minute rollers for alarm time editing
+- explicit recurrence buttons in the alarm editor
+- enable/disable per alarm
+- delete confirmation
+- full-screen alarm alert with Dismiss and Snooze
+- fixed 10-minute snooze
+- one-time alarms disable after firing
+- missed alarms do not catch up on boot
+- BOOT button dismisses an active alarm
+- BOOT long-press opens setup
 
 ## Build and flash
 
+Normal firmware:
+
 ```sh
-pio run -t upload
+pio run -e waveshare_touch_lcd_3_49
+pio run -e waveshare_touch_lcd_3_49 -t upload
 ```
 
 Serial monitor:
 
 ```sh
-pio device monitor -b 115200
+pio device monitor -p /dev/cu.usbmodem2101 -b 115200
 ```
+
+If automatic upload fails with `Failed to connect to ESP32-S3: No serial data received`, put the board in bootloader mode manually and retry upload. On this board that usually means holding **BOOT**, tapping reset/reconnect, then releasing **BOOT** once upload starts.
+
+Audio hardware test firmware:
+
+```sh
+pio run -e audio_test -t upload
+```
+
+## On-device verification checklist
+
+After flashing normal firmware, verify:
+
+1. Clock face shows retained RTC time and date.
+2. Long-press BOOT opens setup.
+3. Alarm list opens from the next-alarm area.
+4. Add an alarm a few minutes ahead using the rollers and recurrence buttons.
+5. Reboot and confirm the alarm persists.
+6. Let the alarm fire and confirm visual alert plus audio.
+7. Test Snooze, then Dismiss.
+8. Test BOOT while an alert is active and confirm it dismisses the alarm.
