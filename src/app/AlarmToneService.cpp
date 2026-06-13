@@ -1,6 +1,7 @@
 #include "AlarmToneService.h"
 
 #include <Arduino.h>
+#include <Preferences.h>
 #include <math.h>
 #include <stdint.h>
 
@@ -21,6 +22,9 @@ constexpr int kFramesPerChunk = 96;
 constexpr float kPi = 3.14159265358979323846F;
 constexpr uint32_t kBeepIntervalMs = 900;
 constexpr uint32_t kToneChunkMs = 90;
+constexpr const char *kPreferencesNamespace = "deskclock";
+constexpr const char *kAudioEnabledKey = "aud_en";
+constexpr const char *kAlarmVolumeKey = "alarm_vol";
 
 esp_codec_dev_handle_t playback = nullptr;
 esp_io_expander_handle_t io_expander = nullptr;
@@ -30,6 +34,37 @@ uint32_t active_started_ms = 0;
 uint8_t active_alarm_id = 0;
 uint32_t last_beep_ms = 0;
 float phase = 0.0F;
+AlarmToneSettings current_settings;
+
+uint8_t clamp_volume(uint8_t volume)
+{
+  if (volume < 5) {
+    return 5;
+  }
+  if (volume > 100) {
+    return 100;
+  }
+  return volume;
+}
+
+void apply_volume()
+{
+  if (playback != nullptr) {
+    esp_codec_dev_set_out_vol(playback, static_cast<float>(current_settings.volume));
+  }
+}
+
+void save_settings()
+{
+  Preferences preferences;
+  if (!preferences.begin(kPreferencesNamespace, false)) {
+    Serial.println("AlarmToneService: failed to open preferences for write");
+    return;
+  }
+  preferences.putBool(kAudioEnabledKey, current_settings.enabled);
+  preferences.putUChar(kAlarmVolumeKey, current_settings.volume);
+  preferences.end();
+}
 
 bool enable_audio_expander()
 {
@@ -74,7 +109,7 @@ bool init_audio_codecs()
     return false;
   }
 
-  esp_codec_dev_set_out_vol(playback, 85.0);
+  apply_volume();
 
   esp_codec_dev_sample_info_t format = {};
   format.bits_per_sample = kBitsPerSample;
@@ -126,7 +161,14 @@ namespace AlarmToneService {
 
 void begin()
 {
-  if (init_attempted) {
+  Preferences preferences;
+  if (preferences.begin(kPreferencesNamespace, true)) {
+    current_settings.enabled = preferences.getBool(kAudioEnabledKey, current_settings.enabled);
+    current_settings.volume = clamp_volume(preferences.getUChar(kAlarmVolumeKey, current_settings.volume));
+    preferences.end();
+  }
+
+  if (init_attempted || !current_settings.enabled) {
     return;
   }
   init_attempted = true;
@@ -136,7 +178,7 @@ void begin()
 
 void loop(const ActiveAlarmAlert &alert)
 {
-  if (!initialized || !alert.active || !alert.sound_allowed) {
+  if (!initialized || !current_settings.enabled || !alert.active || !alert.sound_allowed) {
     active_alarm_id = 0;
     active_started_ms = 0;
     return;
@@ -162,7 +204,7 @@ void loop(const ActiveAlarmAlert &alert)
 
 void testTone()
 {
-  if (!initialized) {
+  if (!initialized || !current_settings.enabled) {
     return;
   }
   play_tone_chunk(523.25F, 140);
@@ -173,6 +215,23 @@ void testTone()
 bool available()
 {
   return initialized;
+}
+
+AlarmToneSettings settings()
+{
+  return current_settings;
+}
+
+void updateSettings(const AlarmToneSettings &settings)
+{
+  current_settings = settings;
+  current_settings.volume = clamp_volume(current_settings.volume);
+  save_settings();
+  apply_volume();
+  if (current_settings.enabled && !init_attempted) {
+    begin();
+  }
+  Serial.printf("AlarmToneService: audio=%s volume=%u\n", current_settings.enabled ? "on" : "off", current_settings.volume);
 }
 
 } // namespace AlarmToneService

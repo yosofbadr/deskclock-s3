@@ -33,6 +33,7 @@ lv_obj_t *network_value_label = nullptr;
 bool use_24_hour_time = true;
 DeskClock::DateTime editing_time;
 DeskClock::BrightnessSettings editing_brightness;
+DeskClock::AlarmToneSettings editing_tone;
 DeskClock::Alarm editing_alarm;
 bool editing_existing_alarm = false;
 uint8_t editing_alarm_id = 0;
@@ -659,12 +660,13 @@ void refresh_brightness_setup()
   snprintf(
       buffer,
       sizeof(buffer),
-      "Day %u  Night %u\nNight starts %02u:00  Day starts %02u:00\nCurrent %u",
+      "Day %u  Night %u\nNight starts %02u:00  Day starts %02u:00\nAudio %s  Vol %u",
       editing_brightness.day_brightness,
       editing_brightness.night_brightness,
       editing_brightness.night_start_hour,
       editing_brightness.day_start_hour,
-      DeskClock::BrightnessService::currentBrightness());
+      editing_tone.enabled ? "on" : "off",
+      editing_tone.volume);
   lv_label_set_text(brightness_value_label, buffer);
 }
 
@@ -676,6 +678,7 @@ void close_brightness_event(lv_event_t *)
 void save_brightness_event(lv_event_t *)
 {
   DeskClock::BrightnessService::updateSettings(editing_brightness);
+  DeskClock::AlarmToneService::updateSettings(editing_tone);
   lv_obj_add_flag(brightness_panel, LV_OBJ_FLAG_HIDDEN);
 }
 
@@ -698,18 +701,26 @@ void adjust_brightness_event(lv_event_t *event)
     editing_brightness.day_start_hour = static_cast<uint8_t>((editing_brightness.day_start_hour + 23U) % 24U);
   } else if (action == 8) {
     editing_brightness.day_start_hour = static_cast<uint8_t>((editing_brightness.day_start_hour + 1U) % 24U);
+  } else if (action == 9 || action == 10) {
+    const int32_t delta = action == 9 ? -10 : 10;
+    const int32_t next = static_cast<int32_t>(editing_tone.volume) + delta;
+    editing_tone.volume = static_cast<uint8_t>(next < 5 ? 5 : (next > 100 ? 100 : next));
+  } else if (action == 11) {
+    editing_tone.enabled = !editing_tone.enabled;
   }
   refresh_brightness_setup();
 }
 
 void test_alarm_tone_event(lv_event_t *)
 {
+  DeskClock::AlarmToneService::updateSettings(editing_tone);
   DeskClock::AlarmToneService::testTone();
 }
 
 void open_brightness_event(lv_event_t *)
 {
   editing_brightness = DeskClock::BrightnessService::settings();
+  editing_tone = DeskClock::AlarmToneService::settings();
   refresh_brightness_setup();
   lv_obj_clear_flag(brightness_panel, LV_OBJ_FLAG_HIDDEN);
   lv_obj_move_foreground(brightness_panel);
@@ -932,14 +943,21 @@ extern "C" void clock_face_create(void)
   lv_obj_align(day_start_up, LV_ALIGN_RIGHT_MID, -26, 42);
   lv_obj_add_event_cb(day_start_up, adjust_brightness_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<uintptr_t>(8)));
 
-  lv_obj_t *test_tone = create_button(brightness_panel, "Test tone", 86, 34);
-  lv_obj_align(test_tone, LV_ALIGN_BOTTOM_LEFT, 14, -12);
+  lv_obj_t *vol_down = create_button(brightness_panel, "Vol-", 54, 30);
+  lv_obj_align(vol_down, LV_ALIGN_LEFT_MID, 148, 42);
+  lv_obj_add_event_cb(vol_down, adjust_brightness_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<uintptr_t>(9)));
+  lv_obj_t *vol_up = create_button(brightness_panel, "Vol+", 54, 30);
+  lv_obj_align(vol_up, LV_ALIGN_RIGHT_MID, -148, 42);
+  lv_obj_add_event_cb(vol_up, adjust_brightness_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<uintptr_t>(10)));
+
+  lv_obj_t *audio_toggle = create_button(brightness_panel, "Audio", 64, 34);
+  lv_obj_align(audio_toggle, LV_ALIGN_BOTTOM_LEFT, 14, -12);
+  lv_obj_add_event_cb(audio_toggle, adjust_brightness_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<uintptr_t>(11)));
+  lv_obj_t *test_tone = create_button(brightness_panel, "Test", 58, 34);
+  lv_obj_align(test_tone, LV_ALIGN_BOTTOM_LEFT, 84, -12);
   lv_obj_add_event_cb(test_tone, test_alarm_tone_event, LV_EVENT_CLICKED, nullptr);
-  if (!DeskClock::AlarmToneService::available()) {
-    lv_obj_add_state(test_tone, LV_STATE_DISABLED);
-  }
   lv_obj_t *save_brightness = create_button(brightness_panel, "Save", 74, 34);
-  lv_obj_align(save_brightness, LV_ALIGN_BOTTOM_MID, 0, -12);
+  lv_obj_align(save_brightness, LV_ALIGN_BOTTOM_MID, 24, -12);
   lv_obj_add_event_cb(save_brightness, save_brightness_event, LV_EVENT_CLICKED, nullptr);
   lv_obj_t *close_brightness = create_button(brightness_panel, "Close", 74, 34);
   lv_obj_align(close_brightness, LV_ALIGN_BOTTOM_RIGHT, -14, -12);
