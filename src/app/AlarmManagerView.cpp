@@ -17,6 +17,8 @@ Alarm editing_alarm;
 bool editing_existing_alarm = false;
 uint8_t editing_alarm_id = 0;
 uint8_t pending_delete_alarm_id = 0;
+lv_obj_t *hour_roller = nullptr;
+lv_obj_t *minute_roller = nullptr;
 
 uint8_t days_in_month(uint16_t year, uint8_t month)
 {
@@ -164,17 +166,13 @@ void edit_event(lv_event_t *event)
   }
 }
 
-void adjust_time_event(lv_event_t *event)
+void time_roller_event(lv_event_t *)
 {
-  const int32_t delta = static_cast<int32_t>(reinterpret_cast<intptr_t>(lv_event_get_user_data(event)));
-  int32_t total = static_cast<int32_t>(editing_alarm.hour) * 60 + editing_alarm.minute + delta;
-  while (total < 0) {
-    total += 24 * 60;
+  if (hour_roller == nullptr || minute_roller == nullptr) {
+    return;
   }
-  total %= 24 * 60;
-  editing_alarm.hour = static_cast<uint8_t>(total / 60);
-  editing_alarm.minute = static_cast<uint8_t>(total % 60);
-  refresh_editor();
+  editing_alarm.hour = static_cast<uint8_t>(lv_roller_get_selected(hour_roller));
+  editing_alarm.minute = static_cast<uint8_t>(lv_roller_get_selected(minute_roller));
 }
 
 void adjust_date_event(lv_event_t *event)
@@ -219,6 +217,7 @@ void cycle_recurrence_event(lv_event_t *)
 
 void save_editor_event(lv_event_t *)
 {
+  time_roller_event(nullptr);
   if (editing_alarm.recurrence == AlarmRecurrence::Once && editing_alarm.year == 0) {
     DateTime now = TimeService::snapshot().now;
     editing_alarm.year = now.valid ? now.year : 2026;
@@ -326,6 +325,8 @@ void refresh_editor()
     return;
   }
   lv_obj_clean(panel);
+  hour_roller = nullptr;
+  minute_roller = nullptr;
   draw_header(editing_existing_alarm ? "Edit alarm" : "New alarm");
 
   char alarm_time[12];
@@ -343,18 +344,24 @@ void refresh_editor()
   lv_label_set_text(value, details);
   lv_obj_align(value, LV_ALIGN_CENTER, 0, -22);
 
-  lv_obj_t *minus_hour = UiWidgets::button(panel, "-1h", 58, 34);
-  lv_obj_align(minus_hour, LV_ALIGN_LEFT_MID, 20, 48);
-  lv_obj_add_event_cb(minus_hour, adjust_time_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(-60)));
-  lv_obj_t *minus_minute = UiWidgets::button(panel, "-1m", 58, 34);
-  lv_obj_align(minus_minute, LV_ALIGN_LEFT_MID, 88, 48);
-  lv_obj_add_event_cb(minus_minute, adjust_time_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(-1)));
-  lv_obj_t *plus_minute = UiWidgets::button(panel, "+1m", 58, 34);
-  lv_obj_align(plus_minute, LV_ALIGN_RIGHT_MID, -88, 48);
-  lv_obj_add_event_cb(plus_minute, adjust_time_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(1)));
-  lv_obj_t *plus_hour = UiWidgets::button(panel, "+1h", 58, 34);
-  lv_obj_align(plus_hour, LV_ALIGN_RIGHT_MID, -20, 48);
-  lv_obj_add_event_cb(plus_hour, adjust_time_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(60)));
+  static const char *hour_options = "00\n01\n02\n03\n04\n05\n06\n07\n08\n09\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20\n21\n22\n23";
+  static const char *minute_options = "00\n01\n02\n03\n04\n05\n06\n07\n08\n09\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20\n21\n22\n23\n24\n25\n26\n27\n28\n29\n30\n31\n32\n33\n34\n35\n36\n37\n38\n39\n40\n41\n42\n43\n44\n45\n46\n47\n48\n49\n50\n51\n52\n53\n54\n55\n56\n57\n58\n59";
+
+  hour_roller = lv_roller_create(panel);
+  lv_roller_set_options(hour_roller, hour_options, LV_ROLLER_MODE_INFINITE);
+  lv_roller_set_visible_row_count(hour_roller, 3);
+  lv_roller_set_selected(hour_roller, editing_alarm.hour, LV_ANIM_OFF);
+  lv_obj_set_size(hour_roller, 74, 82);
+  lv_obj_align(hour_roller, LV_ALIGN_CENTER, -48, 42);
+  lv_obj_add_event_cb(hour_roller, time_roller_event, LV_EVENT_VALUE_CHANGED, nullptr);
+
+  minute_roller = lv_roller_create(panel);
+  lv_roller_set_options(minute_roller, minute_options, LV_ROLLER_MODE_INFINITE);
+  lv_roller_set_visible_row_count(minute_roller, 3);
+  lv_roller_set_selected(minute_roller, editing_alarm.minute, LV_ANIM_OFF);
+  lv_obj_set_size(minute_roller, 74, 82);
+  lv_obj_align(minute_roller, LV_ALIGN_CENTER, 48, 42);
+  lv_obj_add_event_cb(minute_roller, time_roller_event, LV_EVENT_VALUE_CHANGED, nullptr);
 
   lv_obj_t *date_down = UiWidgets::button(panel, "D-", 44, 30);
   lv_obj_align(date_down, LV_ALIGN_TOP_MID, -48, 48);
