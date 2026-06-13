@@ -146,6 +146,14 @@ void adjust_date_event(lv_event_t *event)
   refresh();
 }
 
+void clamp_day_to_month()
+{
+  const uint8_t month_days = days_in_month(editing_time.year, editing_time.month);
+  if (editing_time.day > month_days) {
+    editing_time.day = month_days;
+  }
+}
+
 void adjust_month_event(lv_event_t *event)
 {
   const int8_t delta = static_cast<int8_t>(reinterpret_cast<intptr_t>(lv_event_get_user_data(event)));
@@ -161,10 +169,22 @@ void adjust_month_event(lv_event_t *event)
     editing_time.year++;
   }
   editing_time.month = static_cast<uint8_t>(month);
-  const uint8_t month_days = days_in_month(editing_time.year, editing_time.month);
-  if (editing_time.day > month_days) {
-    editing_time.day = month_days;
+  clamp_day_to_month();
+  refresh();
+}
+
+void adjust_year_event(lv_event_t *event)
+{
+  const int16_t delta = static_cast<int16_t>(reinterpret_cast<intptr_t>(lv_event_get_user_data(event)));
+  int32_t year = static_cast<int32_t>(editing_time.year) + delta;
+  if (year < 2024) {
+    year = 2024;
   }
+  if (year > 2099) {
+    year = 2099;
+  }
+  editing_time.year = static_cast<uint16_t>(year);
+  clamp_day_to_month();
   refresh();
 }
 
@@ -232,18 +252,24 @@ void create(lv_obj_t *parent, int32_t width, int32_t height, const lv_font_t *fo
   lv_obj_align(plus_hour, LV_ALIGN_RIGHT_MID, -20, 18);
   lv_obj_add_event_cb(plus_hour, adjust_time_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(60)));
 
-  lv_obj_t *month_down = UiWidgets::button(panel, "M-", 44, 30);
-  lv_obj_align(month_down, LV_ALIGN_TOP_MID, -108, 48);
+  lv_obj_t *year_down = UiWidgets::button(panel, "Y-", 40, 30);
+  lv_obj_align(year_down, LV_ALIGN_TOP_MID, -132, 48);
+  lv_obj_add_event_cb(year_down, adjust_year_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(-1)));
+  lv_obj_t *month_down = UiWidgets::button(panel, "M-", 40, 30);
+  lv_obj_align(month_down, LV_ALIGN_TOP_MID, -84, 48);
   lv_obj_add_event_cb(month_down, adjust_month_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(-1)));
-  lv_obj_t *date_down = UiWidgets::button(panel, "D-", 44, 30);
-  lv_obj_align(date_down, LV_ALIGN_TOP_MID, -54, 48);
+  lv_obj_t *date_down = UiWidgets::button(panel, "D-", 40, 30);
+  lv_obj_align(date_down, LV_ALIGN_TOP_MID, -36, 48);
   lv_obj_add_event_cb(date_down, adjust_date_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(-1)));
-  lv_obj_t *date_up = UiWidgets::button(panel, "D+", 44, 30);
-  lv_obj_align(date_up, LV_ALIGN_TOP_MID, 54, 48);
+  lv_obj_t *date_up = UiWidgets::button(panel, "D+", 40, 30);
+  lv_obj_align(date_up, LV_ALIGN_TOP_MID, 36, 48);
   lv_obj_add_event_cb(date_up, adjust_date_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(1)));
-  lv_obj_t *month_up = UiWidgets::button(panel, "M+", 44, 30);
-  lv_obj_align(month_up, LV_ALIGN_TOP_MID, 108, 48);
+  lv_obj_t *month_up = UiWidgets::button(panel, "M+", 40, 30);
+  lv_obj_align(month_up, LV_ALIGN_TOP_MID, 84, 48);
   lv_obj_add_event_cb(month_up, adjust_month_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(1)));
+  lv_obj_t *year_up = UiWidgets::button(panel, "Y+", 40, 30);
+  lv_obj_align(year_up, LV_ALIGN_TOP_MID, 132, 48);
+  lv_obj_add_event_cb(year_up, adjust_year_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(1)));
 
   lv_obj_t *format_button = UiWidgets::button(panel, "12/24h", 76, 34);
   lv_obj_align(format_button, LV_ALIGN_BOTTOM_LEFT, 14, -12);
