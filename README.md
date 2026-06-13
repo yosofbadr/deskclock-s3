@@ -100,15 +100,16 @@ pio run -e audio_test
 
 After flashing normal firmware, verify:
 
-1. Clock face shows retained RTC time and date.
-2. Short-press BOOT and confirm serial logs `BOOT: pressed` and `BOOT: released after ... ms`.
-3. Long-press BOOT for at least 1.2 seconds and confirm serial log `BOOT: long press opening setup` plus setup UI opens.
-4. Alarm list opens from the next-alarm area.
-5. Add an alarm a few minutes ahead using the rollers and recurrence buttons.
-6. Reboot and confirm the alarm persists.
-7. Let the alarm fire and confirm visual alert plus audio.
-8. Tap Dismiss and confirm the alert does not immediately re-open during the same minute.
-9. Create/fire another alarm, tap Snooze, and confirm the next-alarm indicator shows the snoozed occurrence.
-10. Let the snoozed alarm fire and confirm the sound window restarts.
-11. Test BOOT while an alert is active and confirm it logs `BOOT: dismissing active alarm` and dismisses the alarm.
-12. Optional edge check: fill all five saved alarm slots, fire one, tap Snooze, and confirm Snooze still works without needing a free saved-alarm slot.
+1. Serial boot log includes `DeskClock S3: booting RTC + LVGL shell (0.1.0-dev)` so the flashed image is identifiable.
+2. Clock face shows retained RTC time and date.
+3. Short-press BOOT and confirm serial logs `BOOT: pressed` and `BOOT: released after ... ms`.
+4. Long-press BOOT for at least 1.2 seconds and confirm serial log `BOOT: long press opening setup` plus setup UI opens.
+5. Alarm list opens from the next-alarm area.
+6. Add an alarm a few minutes ahead using the rollers and recurrence buttons.
+7. Reboot and confirm the alarm persists.
+8. Let the alarm fire and confirm visual alert plus audio.
+9. Tap Dismiss and confirm the alert does not immediately re-open during the same minute.
+10. Create/fire another alarm, tap Snooze, and confirm the next-alarm indicator shows the snoozed occurrence.
+11. Let the snoozed alarm fire and confirm the sound window restarts.
+12. Test BOOT while an alert is active and confirm it logs `BOOT: dismissing active alarm` and dismisses the alarm.
+13. Optional edge check: fill all five saved alarm slots, fire one, tap Snooze, and confirm Snooze still works without needing a free saved-alarm slot.

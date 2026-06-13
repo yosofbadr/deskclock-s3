@@ -2,6 +2,10 @@
 
 #include "i2c_bsp.h"
 
+#ifndef DESKCLOCK_FIRMWARE_VERSION
+#define DESKCLOCK_FIRMWARE_VERSION "dev"
+#endif
+
 #ifdef AUDIO_TEST_MODE
 
 #include <math.h>
@@ -185,7 +189,7 @@ void setup()
   Serial.begin(115200);
   delay(500);
 
-  Serial.println("DeskClock S3 audio hardware test starting");
+  Serial.printf("DeskClock S3 audio hardware test starting (%s)\n", DESKCLOCK_FIRMWARE_VERSION);
   i2c_master_Init();
 
   const bool expander_ok = enable_audio_expander();
@@ -266,7 +270,7 @@ void setup()
   Serial.begin(115200);
   delay(500);
 
-  Serial.println("DeskClock S3: booting RTC + LVGL shell");
+  Serial.printf("DeskClock S3: booting RTC + LVGL shell (%s)\n", DESKCLOCK_FIRMWARE_VERSION);
 
   pinMode(kBootButtonPin, INPUT_PULLUP);
 
