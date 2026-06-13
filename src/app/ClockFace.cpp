@@ -1,5 +1,6 @@
 #include "ClockFace.h"
 
+#include <stdint.h>
 #include <stdio.h>
 
 #include "AlarmService.h"
@@ -16,6 +17,7 @@ lv_obj_t *next_alarm_label = nullptr;
 lv_obj_t *sync_dot = nullptr;
 lv_obj_t *alert_panel = nullptr;
 lv_obj_t *alert_time_label = nullptr;
+lv_obj_t *alarm_manager_panel = nullptr;
 
 const lv_font_t *time_font()
 {
@@ -115,6 +117,28 @@ void update_next_alarm_label(const DeskClock::DateTime &now)
   lv_label_set_text(next_alarm_label, buffer);
 }
 
+void refresh_alarm_manager();
+
+DeskClock::Alarm *find_alarm_by_id(uint8_t id, DeskClock::Alarm *alarms, size_t count)
+{
+  for (size_t index = 0; index < count; ++index) {
+    if (alarms[index].id == id) {
+      return &alarms[index];
+    }
+  }
+  return nullptr;
+}
+
+lv_obj_t *create_button(lv_obj_t *parent, const char *text, int32_t width, int32_t height)
+{
+  lv_obj_t *button = lv_button_create(parent);
+  lv_obj_set_size(button, width, height);
+  lv_obj_t *label = lv_label_create(button);
+  lv_label_set_text(label, text);
+  lv_obj_center(label);
+  return button;
+}
+
 void dismiss_alert_event(lv_event_t *)
 {
   DeskClock::AlarmService::dismissActiveAlert();
@@ -123,6 +147,118 @@ void dismiss_alert_event(lv_event_t *)
 void snooze_alert_event(lv_event_t *)
 {
   DeskClock::AlarmService::snoozeActiveAlert(DeskClock::TimeService::snapshot().now);
+}
+
+void close_alarm_manager_event(lv_event_t *)
+{
+  lv_obj_add_flag(alarm_manager_panel, LV_OBJ_FLAG_HIDDEN);
+}
+
+void toggle_alarm_event(lv_event_t *event)
+{
+  const uint8_t id = static_cast<uint8_t>(reinterpret_cast<uintptr_t>(lv_event_get_user_data(event)));
+  DeskClock::Alarm alarms[DeskClock::kMaxAlarms];
+  const size_t count = DeskClock::AlarmService::copyAlarms(alarms, DeskClock::kMaxAlarms);
+  DeskClock::Alarm *alarm = find_alarm_by_id(id, alarms, count);
+  if (alarm == nullptr) {
+    return;
+  }
+  DeskClock::AlarmService::setEnabled(id, !alarm->enabled);
+  refresh_alarm_manager();
+}
+
+void delete_alarm_event(lv_event_t *event)
+{
+  const uint8_t id = static_cast<uint8_t>(reinterpret_cast<uintptr_t>(lv_event_get_user_data(event)));
+  DeskClock::AlarmService::removeAlarm(id);
+  refresh_alarm_manager();
+}
+
+void add_daily_alarm_event(lv_event_t *)
+{
+  const DeskClock::TimeSnapshot snapshot = DeskClock::TimeService::snapshot();
+  if (!snapshot.now.valid) {
+    return;
+  }
+
+  DeskClock::Alarm alarm;
+  alarm.enabled = true;
+  alarm.recurrence = DeskClock::AlarmRecurrence::Daily;
+  const uint16_t total_minutes = static_cast<uint16_t>(snapshot.now.hour) * 60U + snapshot.now.minute + 5U;
+  alarm.hour = static_cast<uint8_t>((total_minutes / 60U) % 24U);
+  alarm.minute = static_cast<uint8_t>(total_minutes % 60U);
+  DeskClock::AlarmService::addAlarm(alarm);
+  refresh_alarm_manager();
+}
+
+void open_alarm_manager_event(lv_event_t *)
+{
+  refresh_alarm_manager();
+  lv_obj_clear_flag(alarm_manager_panel, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_move_foreground(alarm_manager_panel);
+}
+
+void refresh_alarm_manager()
+{
+  if (alarm_manager_panel == nullptr) {
+    return;
+  }
+
+  lv_obj_clean(alarm_manager_panel);
+
+  lv_obj_t *title = lv_label_create(alarm_manager_panel);
+  lv_obj_set_style_text_font(title, body_font(), 0);
+  set_text_color(title, 0x1F2933);
+  lv_label_set_text(title, "Alarms");
+  lv_obj_align(title, LV_ALIGN_TOP_LEFT, 14, 10);
+
+  lv_obj_t *close_button = create_button(alarm_manager_panel, "Close", 74, 34);
+  lv_obj_align(close_button, LV_ALIGN_TOP_RIGHT, -10, 8);
+  lv_obj_add_event_cb(close_button, close_alarm_manager_event, LV_EVENT_CLICKED, nullptr);
+
+  lv_obj_t *add_button = create_button(alarm_manager_panel, "+ daily in 5m", 130, 34);
+  lv_obj_align(add_button, LV_ALIGN_TOP_MID, 0, 8);
+  lv_obj_add_event_cb(add_button, add_daily_alarm_event, LV_EVENT_CLICKED, nullptr);
+  if (DeskClock::AlarmService::count() >= DeskClock::kMaxAlarms) {
+    lv_obj_add_state(add_button, LV_STATE_DISABLED);
+  }
+
+  DeskClock::Alarm alarms[DeskClock::kMaxAlarms];
+  const size_t count = DeskClock::AlarmService::copyAlarms(alarms, DeskClock::kMaxAlarms);
+  if (count == 0) {
+    lv_obj_t *empty = lv_label_create(alarm_manager_panel);
+    lv_label_set_text(empty, "No saved alarms");
+    set_text_color(empty, 0x52616F);
+    lv_obj_align(empty, LV_ALIGN_CENTER, 0, 6);
+    return;
+  }
+
+  for (size_t index = 0; index < count; ++index) {
+    const int32_t y = 50 + static_cast<int32_t>(index) * 35;
+    char row_text[48];
+    snprintf(
+        row_text,
+        sizeof(row_text),
+        "%u  %02u:%02u  %s  %s",
+        alarms[index].id,
+        alarms[index].hour,
+        alarms[index].minute,
+        DeskClock::AlarmService::recurrenceLabel(alarms[index].recurrence),
+        alarms[index].enabled ? "on" : "off");
+
+    lv_obj_t *row = lv_label_create(alarm_manager_panel);
+    lv_label_set_text(row, row_text);
+    set_text_color(row, alarms[index].enabled ? 0x1F2933 : 0x829AB1);
+    lv_obj_align(row, LV_ALIGN_TOP_LEFT, 12, y + 8);
+
+    lv_obj_t *toggle = create_button(alarm_manager_panel, alarms[index].enabled ? "Off" : "On", 50, 28);
+    lv_obj_align(toggle, LV_ALIGN_TOP_RIGHT, -72, y);
+    lv_obj_add_event_cb(toggle, toggle_alarm_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<uintptr_t>(alarms[index].id)));
+
+    lv_obj_t *del = create_button(alarm_manager_panel, "Del", 50, 28);
+    lv_obj_align(del, LV_ALIGN_TOP_RIGHT, -14, y);
+    lv_obj_add_event_cb(del, delete_alarm_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<uintptr_t>(alarms[index].id)));
+  }
 }
 
 void update_alert_overlay(const DeskClock::DateTime &now)
@@ -267,12 +403,26 @@ extern "C" void clock_face_create(void)
   set_text_color(next_alarm_label, 0x52616F);
   lv_label_set_text(next_alarm_label, "No alarm");
   lv_obj_align(next_alarm_label, LV_ALIGN_BOTTOM_LEFT, 28, -12);
+  lv_obj_add_flag(next_alarm_label, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_add_event_cb(next_alarm_label, open_alarm_manager_event, LV_EVENT_CLICKED, nullptr);
 
   status_label = lv_label_create(clock_panel);
   lv_obj_set_style_text_font(status_label, body_font(), 0);
   set_text_color(status_label, 0x829AB1);
   lv_label_set_text(status_label, "time not set");
   lv_obj_align(status_label, LV_ALIGN_BOTTOM_RIGHT, -18, -12);
+
+  alarm_manager_panel = lv_obj_create(screen);
+  lv_obj_set_size(alarm_manager_panel, width - 28, height - 28);
+  lv_obj_center(alarm_manager_panel);
+  lv_obj_set_style_radius(alarm_manager_panel, 18, 0);
+  lv_obj_set_style_bg_color(alarm_manager_panel, lv_color_hex(0xFFFFFF), 0);
+  lv_obj_set_style_bg_opa(alarm_manager_panel, LV_OPA_COVER, 0);
+  lv_obj_set_style_border_color(alarm_manager_panel, lv_color_hex(0xCBD5E1), 0);
+  lv_obj_set_style_border_width(alarm_manager_panel, 2, 0);
+  lv_obj_clear_flag(alarm_manager_panel, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_add_flag(alarm_manager_panel, LV_OBJ_FLAG_HIDDEN);
+  refresh_alarm_manager();
 
   alert_panel = lv_obj_create(screen);
   lv_obj_set_size(alert_panel, width - 32, height - 32);
