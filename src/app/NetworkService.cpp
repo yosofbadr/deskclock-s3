@@ -3,6 +3,9 @@
 #include <Arduino.h>
 #include <Preferences.h>
 #include <esp_wifi.h>
+#include <time.h>
+
+#include "TimeService.h"
 
 namespace DeskClock {
 namespace {
@@ -23,6 +26,9 @@ char selected_password[kPasswordBufferLength] = "";
 char password_preview[kPasswordBufferLength] = "";
 char scanned_ssids[kMaxScannedNetworks][kSsidBufferLength] = {};
 int scanned_count = 0;
+bool ntp_started = false;
+bool ntp_synced = false;
+uint32_t last_ntp_check_ms = 0;
 
 void update_password_preview()
 {
@@ -69,7 +75,47 @@ void begin()
 
 void loop()
 {
-  // Placeholder for future NTP sync work. Core clock/alarm remains local.
+  if (!network_enabled) {
+    return;
+  }
+
+  wifi_ap_record_t ap_info = {};
+  if (esp_wifi_sta_get_ap_info(&ap_info) != ESP_OK) {
+    return;
+  }
+
+  if (!ntp_started) {
+    configTzTime("UTC0", "pool.ntp.org", "time.nist.gov");
+    ntp_started = true;
+    last_ntp_check_ms = 0;
+    Serial.println("NetworkService: started NTP sync");
+  }
+
+  const uint32_t now_ms = millis();
+  if (ntp_synced || (last_ntp_check_ms != 0 && now_ms - last_ntp_check_ms < 5000)) {
+    return;
+  }
+  last_ntp_check_ms = now_ms;
+
+  time_t epoch = time(nullptr);
+  if (epoch < 1704067200) { // 2024-01-01 UTC
+    return;
+  }
+
+  struct tm timeinfo = {};
+  gmtime_r(&epoch, &timeinfo);
+  DateTime synced;
+  synced.year = static_cast<uint16_t>(timeinfo.tm_year + 1900);
+  synced.month = static_cast<uint8_t>(timeinfo.tm_mon + 1);
+  synced.day = static_cast<uint8_t>(timeinfo.tm_mday);
+  synced.hour = static_cast<uint8_t>(timeinfo.tm_hour);
+  synced.minute = static_cast<uint8_t>(timeinfo.tm_min);
+  synced.second = static_cast<uint8_t>(timeinfo.tm_sec);
+  synced.valid = true;
+  if (TimeService::setManualTime(synced)) {
+    ntp_synced = true;
+    Serial.println("NetworkService: RTC updated from NTP");
+  }
 }
 
 NetworkSnapshot snapshot()
@@ -80,8 +126,10 @@ NetworkSnapshot snapshot()
   result.connected = esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK;
   result.ssid = selected_ssid[0] != '\0' ? selected_ssid : (demo_network_selected ? "Demo network" : "not selected");
   result.password_preview = password_preview;
-  if (result.connected) {
-    result.status = "connected";
+  if (result.connected && ntp_synced) {
+    result.status = "connected; time synced";
+  } else if (result.connected) {
+    result.status = "connected; syncing time";
   } else if (!network_enabled) {
     result.status = "Wi-Fi skipped";
   } else if (selected_ssid[0] != '\0' && selected_password[0] != '\0') {
@@ -224,6 +272,8 @@ bool connectSelected()
     return false;
   }
   ESP_ERROR_CHECK_WITHOUT_ABORT(esp_wifi_start());
+  ntp_started = false;
+  ntp_synced = false;
   err = esp_wifi_connect();
   Serial.printf("NetworkService: connect to %s result=%d\n", selected_ssid, err);
   return err == ESP_OK;
