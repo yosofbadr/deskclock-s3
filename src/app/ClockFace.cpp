@@ -30,6 +30,9 @@ lv_obj_t *brightness_value_label = nullptr;
 bool use_24_hour_time = true;
 DeskClock::DateTime editing_time;
 DeskClock::BrightnessSettings editing_brightness;
+DeskClock::Alarm editing_alarm;
+bool editing_existing_alarm = false;
+uint8_t editing_alarm_id = 0;
 
 const lv_font_t *time_font()
 {
@@ -159,6 +162,7 @@ void update_next_alarm_label(const DeskClock::DateTime &now)
 }
 
 void refresh_alarm_manager();
+void refresh_alarm_editor();
 
 DeskClock::Alarm *find_alarm_by_id(uint8_t id, DeskClock::Alarm *alarms, size_t count)
 {
@@ -215,20 +219,103 @@ void delete_alarm_event(lv_event_t *event)
   refresh_alarm_manager();
 }
 
-void add_daily_alarm_event(lv_event_t *)
+void begin_alarm_editor(const DeskClock::Alarm &alarm, bool existing)
 {
-  const DeskClock::TimeSnapshot snapshot = DeskClock::TimeService::snapshot();
-  if (!snapshot.now.valid) {
-    return;
-  }
+  editing_alarm = alarm;
+  editing_existing_alarm = existing;
+  editing_alarm_id = existing ? alarm.id : 0;
+  refresh_alarm_editor();
+}
 
+void new_alarm_event(lv_event_t *)
+{
   DeskClock::Alarm alarm;
   alarm.enabled = true;
   alarm.recurrence = DeskClock::AlarmRecurrence::Daily;
-  const uint16_t total_minutes = static_cast<uint16_t>(snapshot.now.hour) * 60U + snapshot.now.minute + 5U;
-  alarm.hour = static_cast<uint8_t>((total_minutes / 60U) % 24U);
-  alarm.minute = static_cast<uint8_t>(total_minutes % 60U);
-  DeskClock::AlarmService::addAlarm(alarm);
+  const DeskClock::TimeSnapshot snapshot = DeskClock::TimeService::snapshot();
+  if (snapshot.now.valid) {
+    const uint16_t total_minutes = static_cast<uint16_t>(snapshot.now.hour) * 60U + snapshot.now.minute + 5U;
+    alarm.hour = static_cast<uint8_t>((total_minutes / 60U) % 24U);
+    alarm.minute = static_cast<uint8_t>(total_minutes % 60U);
+  } else {
+    alarm.hour = 7;
+    alarm.minute = 0;
+  }
+  begin_alarm_editor(alarm, false);
+}
+
+void edit_alarm_event(lv_event_t *event)
+{
+  const uint8_t id = static_cast<uint8_t>(reinterpret_cast<uintptr_t>(lv_event_get_user_data(event)));
+  DeskClock::Alarm alarms[DeskClock::kMaxAlarms];
+  const size_t count = DeskClock::AlarmService::copyAlarms(alarms, DeskClock::kMaxAlarms);
+  DeskClock::Alarm *alarm = find_alarm_by_id(id, alarms, count);
+  if (alarm != nullptr) {
+    begin_alarm_editor(*alarm, true);
+  }
+}
+
+void adjust_alarm_time_event(lv_event_t *event)
+{
+  const int32_t delta = static_cast<int32_t>(reinterpret_cast<intptr_t>(lv_event_get_user_data(event)));
+  int32_t total = static_cast<int32_t>(editing_alarm.hour) * 60 + editing_alarm.minute + delta;
+  while (total < 0) {
+    total += 24 * 60;
+  }
+  total %= 24 * 60;
+  editing_alarm.hour = static_cast<uint8_t>(total / 60);
+  editing_alarm.minute = static_cast<uint8_t>(total % 60);
+  refresh_alarm_editor();
+}
+
+void cycle_alarm_recurrence_event(lv_event_t *)
+{
+  switch (editing_alarm.recurrence) {
+  case DeskClock::AlarmRecurrence::Once:
+    editing_alarm.recurrence = DeskClock::AlarmRecurrence::Daily;
+    break;
+  case DeskClock::AlarmRecurrence::Daily:
+    editing_alarm.recurrence = DeskClock::AlarmRecurrence::Weekdays;
+    break;
+  case DeskClock::AlarmRecurrence::Weekdays:
+    editing_alarm.recurrence = DeskClock::AlarmRecurrence::Weekends;
+    break;
+  case DeskClock::AlarmRecurrence::Weekends:
+  default:
+    editing_alarm.recurrence = DeskClock::AlarmRecurrence::Once;
+    DeskClock::DateTime now = DeskClock::TimeService::snapshot().now;
+    if (now.valid) {
+      editing_alarm.year = now.year;
+      editing_alarm.month = now.month;
+      editing_alarm.day = now.day;
+    } else {
+      editing_alarm.year = 2026;
+      editing_alarm.month = 1;
+      editing_alarm.day = 1;
+    }
+    break;
+  }
+  refresh_alarm_editor();
+}
+
+void save_alarm_editor_event(lv_event_t *)
+{
+  if (editing_alarm.recurrence == DeskClock::AlarmRecurrence::Once && editing_alarm.year == 0) {
+    DeskClock::DateTime now = DeskClock::TimeService::snapshot().now;
+    editing_alarm.year = now.valid ? now.year : 2026;
+    editing_alarm.month = now.valid ? now.month : 1;
+    editing_alarm.day = now.valid ? now.day : 1;
+  }
+  if (editing_existing_alarm) {
+    DeskClock::AlarmService::updateAlarm(editing_alarm_id, editing_alarm);
+  } else {
+    DeskClock::AlarmService::addAlarm(editing_alarm);
+  }
+  refresh_alarm_manager();
+}
+
+void cancel_alarm_editor_event(lv_event_t *)
+{
   refresh_alarm_manager();
 }
 
@@ -239,6 +326,19 @@ void open_alarm_manager_event(lv_event_t *)
   lv_obj_move_foreground(alarm_manager_panel);
 }
 
+void draw_alarm_manager_header(const char *title_text)
+{
+  lv_obj_t *title = lv_label_create(alarm_manager_panel);
+  lv_obj_set_style_text_font(title, body_font(), 0);
+  set_text_color(title, 0x1F2933);
+  lv_label_set_text(title, title_text);
+  lv_obj_align(title, LV_ALIGN_TOP_LEFT, 14, 10);
+
+  lv_obj_t *close_button = create_button(alarm_manager_panel, "Close", 74, 34);
+  lv_obj_align(close_button, LV_ALIGN_TOP_RIGHT, -10, 8);
+  lv_obj_add_event_cb(close_button, close_alarm_manager_event, LV_EVENT_CLICKED, nullptr);
+}
+
 void refresh_alarm_manager()
 {
   if (alarm_manager_panel == nullptr) {
@@ -246,20 +346,11 @@ void refresh_alarm_manager()
   }
 
   lv_obj_clean(alarm_manager_panel);
+  draw_alarm_manager_header("Alarms");
 
-  lv_obj_t *title = lv_label_create(alarm_manager_panel);
-  lv_obj_set_style_text_font(title, body_font(), 0);
-  set_text_color(title, 0x1F2933);
-  lv_label_set_text(title, "Alarms");
-  lv_obj_align(title, LV_ALIGN_TOP_LEFT, 14, 10);
-
-  lv_obj_t *close_button = create_button(alarm_manager_panel, "Close", 74, 34);
-  lv_obj_align(close_button, LV_ALIGN_TOP_RIGHT, -10, 8);
-  lv_obj_add_event_cb(close_button, close_alarm_manager_event, LV_EVENT_CLICKED, nullptr);
-
-  lv_obj_t *add_button = create_button(alarm_manager_panel, "+ daily in 5m", 130, 34);
+  lv_obj_t *add_button = create_button(alarm_manager_panel, "+ alarm", 94, 34);
   lv_obj_align(add_button, LV_ALIGN_TOP_MID, 0, 8);
-  lv_obj_add_event_cb(add_button, add_daily_alarm_event, LV_EVENT_CLICKED, nullptr);
+  lv_obj_add_event_cb(add_button, new_alarm_event, LV_EVENT_CLICKED, nullptr);
   if (DeskClock::AlarmService::count() >= DeskClock::kMaxAlarms) {
     lv_obj_add_state(add_button, LV_STATE_DISABLED);
   }
@@ -276,14 +367,15 @@ void refresh_alarm_manager()
 
   for (size_t index = 0; index < count; ++index) {
     const int32_t y = 50 + static_cast<int32_t>(index) * 35;
+    char alarm_time[12];
+    format_time(alarm_time, sizeof(alarm_time), alarms[index].hour, alarms[index].minute);
     char row_text[48];
     snprintf(
         row_text,
         sizeof(row_text),
-        "%u  %02u:%02u  %s  %s",
+        "%u  %s  %s  %s",
         alarms[index].id,
-        alarms[index].hour,
-        alarms[index].minute,
+        alarm_time,
         DeskClock::AlarmService::recurrenceLabel(alarms[index].recurrence),
         alarms[index].enabled ? "on" : "off");
 
@@ -291,6 +383,10 @@ void refresh_alarm_manager()
     lv_label_set_text(row, row_text);
     set_text_color(row, alarms[index].enabled ? 0x1F2933 : 0x829AB1);
     lv_obj_align(row, LV_ALIGN_TOP_LEFT, 12, y + 8);
+
+    lv_obj_t *edit = create_button(alarm_manager_panel, "Edit", 50, 28);
+    lv_obj_align(edit, LV_ALIGN_TOP_RIGHT, -130, y);
+    lv_obj_add_event_cb(edit, edit_alarm_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<uintptr_t>(alarms[index].id)));
 
     lv_obj_t *toggle = create_button(alarm_manager_panel, alarms[index].enabled ? "Off" : "On", 50, 28);
     lv_obj_align(toggle, LV_ALIGN_TOP_RIGHT, -72, y);
@@ -300,6 +396,49 @@ void refresh_alarm_manager()
     lv_obj_align(del, LV_ALIGN_TOP_RIGHT, -14, y);
     lv_obj_add_event_cb(del, delete_alarm_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<uintptr_t>(alarms[index].id)));
   }
+}
+
+void refresh_alarm_editor()
+{
+  if (alarm_manager_panel == nullptr) {
+    return;
+  }
+  lv_obj_clean(alarm_manager_panel);
+  draw_alarm_manager_header(editing_existing_alarm ? "Edit alarm" : "New alarm");
+
+  char alarm_time[12];
+  format_time(alarm_time, sizeof(alarm_time), editing_alarm.hour, editing_alarm.minute);
+  char details[80];
+  snprintf(details, sizeof(details), "%s\n%s", alarm_time, DeskClock::AlarmService::recurrenceLabel(editing_alarm.recurrence));
+  lv_obj_t *value = lv_label_create(alarm_manager_panel);
+  lv_obj_set_style_text_font(value, time_font(), 0);
+  lv_obj_set_style_text_align(value, LV_TEXT_ALIGN_CENTER, 0);
+  set_text_color(value, 0x1F2933);
+  lv_label_set_text(value, details);
+  lv_obj_align(value, LV_ALIGN_CENTER, 0, -22);
+
+  lv_obj_t *minus_hour = create_button(alarm_manager_panel, "-1h", 58, 34);
+  lv_obj_align(minus_hour, LV_ALIGN_LEFT_MID, 20, 48);
+  lv_obj_add_event_cb(minus_hour, adjust_alarm_time_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(-60)));
+  lv_obj_t *minus_minute = create_button(alarm_manager_panel, "-1m", 58, 34);
+  lv_obj_align(minus_minute, LV_ALIGN_LEFT_MID, 88, 48);
+  lv_obj_add_event_cb(minus_minute, adjust_alarm_time_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(-1)));
+  lv_obj_t *plus_minute = create_button(alarm_manager_panel, "+1m", 58, 34);
+  lv_obj_align(plus_minute, LV_ALIGN_RIGHT_MID, -88, 48);
+  lv_obj_add_event_cb(plus_minute, adjust_alarm_time_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(1)));
+  lv_obj_t *plus_hour = create_button(alarm_manager_panel, "+1h", 58, 34);
+  lv_obj_align(plus_hour, LV_ALIGN_RIGHT_MID, -20, 48);
+  lv_obj_add_event_cb(plus_hour, adjust_alarm_time_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(60)));
+
+  lv_obj_t *recurrence = create_button(alarm_manager_panel, "Repeat", 82, 34);
+  lv_obj_align(recurrence, LV_ALIGN_BOTTOM_LEFT, 14, -12);
+  lv_obj_add_event_cb(recurrence, cycle_alarm_recurrence_event, LV_EVENT_CLICKED, nullptr);
+  lv_obj_t *save = create_button(alarm_manager_panel, "Save", 74, 34);
+  lv_obj_align(save, LV_ALIGN_BOTTOM_MID, 0, -12);
+  lv_obj_add_event_cb(save, save_alarm_editor_event, LV_EVENT_CLICKED, nullptr);
+  lv_obj_t *cancel = create_button(alarm_manager_panel, "Cancel", 74, 34);
+  lv_obj_align(cancel, LV_ALIGN_BOTTOM_RIGHT, -14, -12);
+  lv_obj_add_event_cb(cancel, cancel_alarm_editor_event, LV_EVENT_CLICKED, nullptr);
 }
 
 void refresh_time_setup()
