@@ -29,6 +29,7 @@ int scanned_count = 0;
 bool ntp_started = false;
 bool ntp_synced = false;
 uint32_t last_ntp_check_ms = 0;
+uint32_t last_connect_attempt_ms = 0;
 
 void update_password_preview()
 {
@@ -38,6 +39,37 @@ void update_password_preview()
     password_preview[index] = index < visible ? selected_password[index] : '*';
   }
   password_preview[length] = '\0';
+}
+
+bool start_wifi_connection()
+{
+  if (selected_ssid[0] == '\0') {
+    return false;
+  }
+
+  wifi_config_t config = {};
+  strlcpy(reinterpret_cast<char *>(config.sta.ssid), selected_ssid, sizeof(config.sta.ssid));
+  strlcpy(reinterpret_cast<char *>(config.sta.password), selected_password, sizeof(config.sta.password));
+  config.sta.threshold.authmode = WIFI_AUTH_OPEN;
+
+  wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+  esp_err_t err = esp_wifi_init(&cfg);
+  if (err != ESP_OK && err != ESP_ERR_WIFI_INIT_STATE) {
+    Serial.printf("NetworkService: wifi init failed err=%d\n", err);
+    return false;
+  }
+  ESP_ERROR_CHECK_WITHOUT_ABORT(esp_wifi_set_mode(WIFI_MODE_STA));
+  err = esp_wifi_set_config(WIFI_IF_STA, &config);
+  if (err != ESP_OK) {
+    Serial.printf("NetworkService: set config failed err=%d\n", err);
+    return false;
+  }
+  ESP_ERROR_CHECK_WITHOUT_ABORT(esp_wifi_start());
+  ntp_started = false;
+  ntp_synced = false;
+  err = esp_wifi_connect();
+  Serial.printf("NetworkService: connect to %s result=%d\n", selected_ssid, err);
+  return err == ESP_OK;
 }
 
 void save()
@@ -89,6 +121,12 @@ void loop()
 
   wifi_ap_record_t ap_info = {};
   if (esp_wifi_sta_get_ap_info(&ap_info) != ESP_OK) {
+    const uint32_t now_ms = millis();
+    if (!demo_network_selected && selected_ssid[0] != '\0' &&
+        (last_connect_attempt_ms == 0 || now_ms - last_connect_attempt_ms >= 30000UL)) {
+      last_connect_attempt_ms = now_ms;
+      (void)start_wifi_connection();
+    }
     return;
   }
 
@@ -262,29 +300,8 @@ bool connectSelected()
     return false;
   }
 
-  wifi_config_t config = {};
-  strlcpy(reinterpret_cast<char *>(config.sta.ssid), selected_ssid, sizeof(config.sta.ssid));
-  strlcpy(reinterpret_cast<char *>(config.sta.password), selected_password, sizeof(config.sta.password));
-  config.sta.threshold.authmode = WIFI_AUTH_OPEN;
-
-  wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-  esp_err_t err = esp_wifi_init(&cfg);
-  if (err != ESP_OK && err != ESP_ERR_WIFI_INIT_STATE) {
-    Serial.printf("NetworkService: wifi init failed err=%d\n", err);
-    return false;
-  }
-  ESP_ERROR_CHECK_WITHOUT_ABORT(esp_wifi_set_mode(WIFI_MODE_STA));
-  err = esp_wifi_set_config(WIFI_IF_STA, &config);
-  if (err != ESP_OK) {
-    Serial.printf("NetworkService: set config failed err=%d\n", err);
-    return false;
-  }
-  ESP_ERROR_CHECK_WITHOUT_ABORT(esp_wifi_start());
-  ntp_started = false;
-  ntp_synced = false;
-  err = esp_wifi_connect();
-  Serial.printf("NetworkService: connect to %s result=%d\n", selected_ssid, err);
-  return err == ESP_OK;
+  last_connect_attempt_ms = millis();
+  return start_wifi_connection();
 }
 
 } // namespace NetworkService
