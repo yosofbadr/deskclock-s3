@@ -16,6 +16,10 @@ void loop();
 NetworkSnapshot snapshot();
 void setEnabled(bool enabled);
 void selectDemoNetwork();
+int scanNetworks();
+int scannedNetworkCount();
+const char *scannedSsid(int index);
+void selectScannedNetwork(int index);
 
 } // namespace NetworkService
 } // namespace DeskClock

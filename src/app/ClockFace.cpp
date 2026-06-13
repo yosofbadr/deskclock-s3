@@ -3,6 +3,7 @@
 #include <Preferences.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "AlarmService.h"
 #include "AlarmToneService.h"
@@ -538,8 +539,15 @@ void refresh_network_setup()
     return;
   }
   DeskClock::NetworkSnapshot network = DeskClock::NetworkService::snapshot();
-  char buffer[96];
-  snprintf(buffer, sizeof(buffer), "Status: %s\nNetwork: %s\nCore clock/alarm works offline", network.status, network.ssid);
+  char scan_lines[96] = "";
+  const int scanned = DeskClock::NetworkService::scannedNetworkCount();
+  for (int index = 0; index < scanned && index < 3; ++index) {
+    char line[32];
+    snprintf(line, sizeof(line), "\n%d: %.24s", index + 1, DeskClock::NetworkService::scannedSsid(index));
+    strlcat(scan_lines, line, sizeof(scan_lines));
+  }
+  char buffer[192];
+  snprintf(buffer, sizeof(buffer), "Status: %s\nNetwork: %.32s%s\nCore clock/alarm works offline", network.status, network.ssid, scan_lines);
   lv_label_set_text(network_value_label, buffer);
 }
 
@@ -551,6 +559,19 @@ void close_network_event(lv_event_t *)
 void skip_wifi_event(lv_event_t *)
 {
   DeskClock::NetworkService::setEnabled(false);
+  refresh_network_setup();
+}
+
+void scan_wifi_event(lv_event_t *)
+{
+  DeskClock::NetworkService::scanNetworks();
+  refresh_network_setup();
+}
+
+void select_scanned_wifi_event(lv_event_t *event)
+{
+  const int index = static_cast<int>(reinterpret_cast<intptr_t>(lv_event_get_user_data(event)));
+  DeskClock::NetworkService::selectScannedNetwork(index);
   refresh_network_setup();
 }
 
@@ -1040,11 +1061,25 @@ extern "C" void clock_face_create(void)
   lv_label_set_text(network_value_label, "offline");
   lv_obj_align(network_value_label, LV_ALIGN_CENTER, 0, -20);
 
-  lv_obj_t *skip_wifi = create_button(network_panel, "Skip Wi-Fi", 96, 34);
+  lv_obj_t *scan_wifi = create_button(network_panel, "Scan", 70, 32);
+  lv_obj_align(scan_wifi, LV_ALIGN_TOP_RIGHT, -14, 10);
+  lv_obj_add_event_cb(scan_wifi, scan_wifi_event, LV_EVENT_CLICKED, nullptr);
+
+  lv_obj_t *select_one = create_button(network_panel, "1", 42, 30);
+  lv_obj_align(select_one, LV_ALIGN_LEFT_MID, 52, 54);
+  lv_obj_add_event_cb(select_one, select_scanned_wifi_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(0)));
+  lv_obj_t *select_two = create_button(network_panel, "2", 42, 30);
+  lv_obj_align(select_two, LV_ALIGN_CENTER, 0, 54);
+  lv_obj_add_event_cb(select_two, select_scanned_wifi_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(1)));
+  lv_obj_t *select_three = create_button(network_panel, "3", 42, 30);
+  lv_obj_align(select_three, LV_ALIGN_RIGHT_MID, -52, 54);
+  lv_obj_add_event_cb(select_three, select_scanned_wifi_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(2)));
+
+  lv_obj_t *skip_wifi = create_button(network_panel, "Skip", 68, 34);
   lv_obj_align(skip_wifi, LV_ALIGN_BOTTOM_LEFT, 14, -12);
   lv_obj_add_event_cb(skip_wifi, skip_wifi_event, LV_EVENT_CLICKED, nullptr);
-  lv_obj_t *demo_wifi = create_button(network_panel, "Demo SSID", 96, 34);
-  lv_obj_align(demo_wifi, LV_ALIGN_BOTTOM_MID, 0, -12);
+  lv_obj_t *demo_wifi = create_button(network_panel, "Demo", 68, 34);
+  lv_obj_align(demo_wifi, LV_ALIGN_BOTTOM_MID, -38, -12);
   lv_obj_add_event_cb(demo_wifi, select_demo_wifi_event, LV_EVENT_CLICKED, nullptr);
   lv_obj_t *close_network = create_button(network_panel, "Close", 74, 34);
   lv_obj_align(close_network, LV_ALIGN_BOTTOM_RIGHT, -14, -12);
