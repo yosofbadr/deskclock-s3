@@ -1,6 +1,5 @@
 #include "ClockFace.h"
 
-#include <Preferences.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -11,6 +10,7 @@
 #include "NetworkSetupView.h"
 #include "SettingsService.h"
 #include "TimeService.h"
+#include "TimeSetupView.h"
 #include "UiWidgets.h"
 #include "lvgl.h"
 
@@ -24,10 +24,6 @@ lv_obj_t *next_alarm_label = nullptr;
 lv_obj_t *sync_dot = nullptr;
 lv_obj_t *setup_hint_label = nullptr;
 lv_obj_t *alarm_manager_panel = nullptr;
-lv_obj_t *time_setup_panel = nullptr;
-lv_obj_t *time_setup_value_label = nullptr;
-bool use_24_hour_time = true;
-DeskClock::DateTime editing_time;
 DeskClock::Alarm editing_alarm;
 bool editing_existing_alarm = false;
 uint8_t editing_alarm_id = 0;
@@ -137,24 +133,6 @@ uint32_t sync_dot_color(DeskClock::SyncState state, bool blink)
   }
 }
 
-void load_display_preferences()
-{
-  Preferences preferences;
-  if (preferences.begin("deskclock", true)) {
-    use_24_hour_time = preferences.getBool("time24", true);
-    preferences.end();
-  }
-}
-
-void save_display_preferences()
-{
-  Preferences preferences;
-  if (preferences.begin("deskclock", false)) {
-    preferences.putBool("time24", use_24_hour_time);
-    preferences.end();
-  }
-}
-
 const char *status_text(const DeskClock::TimeSnapshot &snapshot)
 {
   if (!snapshot.rtc_available) {
@@ -186,17 +164,7 @@ void realign_time_details()
 
 void format_time(char *buffer, size_t size, uint8_t hour, uint8_t minute)
 {
-  if (use_24_hour_time) {
-    snprintf(buffer, size, "%02u:%02u", hour, minute);
-    return;
-  }
-
-  const bool pm = hour >= 12;
-  uint8_t display_hour = hour % 12;
-  if (display_hour == 0) {
-    display_hour = 12;
-  }
-  snprintf(buffer, size, "%u:%02u %s", display_hour, minute, pm ? "PM" : "AM");
+  DeskClock::TimeSetupView::formatTime(buffer, size, hour, minute);
 }
 
 void update_next_alarm_label(const DeskClock::DateTime &now)
@@ -512,88 +480,9 @@ void refresh_alarm_editor()
   lv_obj_add_event_cb(cancel, cancel_alarm_editor_event, LV_EVENT_CLICKED, nullptr);
 }
 
-void refresh_time_setup()
-{
-  if (time_setup_value_label == nullptr) {
-    return;
-  }
-  char time_text[12];
-  format_time(time_text, sizeof(time_text), editing_time.hour, editing_time.minute);
-  DeskClock::SettingsSnapshot settings = DeskClock::SettingsService::snapshot();
-  char buffer[96];
-  snprintf(
-      buffer,
-      sizeof(buffer),
-      "%04u-%02u-%02u  %s\nFormat: %s  TZ: %s",
-      editing_time.year,
-      editing_time.month,
-      editing_time.day,
-      time_text,
-      use_24_hour_time ? "24h" : "12h",
-      settings.timezone_label);
-  lv_label_set_text(time_setup_value_label, buffer);
-}
-
-void close_time_setup_event(lv_event_t *)
-{
-  lv_obj_add_flag(time_setup_panel, LV_OBJ_FLAG_HIDDEN);
-}
-
-void save_time_setup_event(lv_event_t *)
-{
-  editing_time.second = 0;
-  if (DeskClock::TimeService::setManualTime(editing_time)) {
-    DeskClock::SettingsService::setConfigured(true);
-    if (setup_hint_label != nullptr) {
-      lv_obj_add_flag(setup_hint_label, LV_OBJ_FLAG_HIDDEN);
-    }
-    lv_obj_add_flag(time_setup_panel, LV_OBJ_FLAG_HIDDEN);
-  }
-}
-
-void toggle_time_format_event(lv_event_t *)
-{
-  use_24_hour_time = !use_24_hour_time;
-  save_display_preferences();
-  refresh_time_setup();
-}
-
-void cycle_timezone_event(lv_event_t *)
-{
-  DeskClock::SettingsService::cycleTimezone();
-  refresh_time_setup();
-}
-
-void adjust_time_event(lv_event_t *event)
-{
-  const int32_t delta = static_cast<int32_t>(reinterpret_cast<intptr_t>(lv_event_get_user_data(event)));
-  int32_t total = static_cast<int32_t>(editing_time.hour) * 60 + editing_time.minute + delta;
-  while (total < 0) {
-    total += 24 * 60;
-  }
-  total %= 24 * 60;
-  editing_time.hour = static_cast<uint8_t>(total / 60);
-  editing_time.minute = static_cast<uint8_t>(total % 60);
-  refresh_time_setup();
-}
-
 void open_time_setup_event(lv_event_t *)
 {
-  DeskClock::TimeSnapshot snapshot = DeskClock::TimeService::snapshot();
-  if (snapshot.now.valid) {
-    editing_time = snapshot.now;
-  } else {
-    editing_time.year = 2026;
-    editing_time.month = 1;
-    editing_time.day = 1;
-    editing_time.hour = 12;
-    editing_time.minute = 0;
-    editing_time.second = 0;
-    editing_time.valid = true;
-  }
-  refresh_time_setup();
-  lv_obj_clear_flag(time_setup_panel, LV_OBJ_FLAG_HIDDEN);
-  lv_obj_move_foreground(time_setup_panel);
+  DeskClock::TimeSetupView::open();
 }
 
 void update_clock_from_time_service(lv_timer_t *)
@@ -642,7 +531,7 @@ void update_clock_from_time_service(lv_timer_t *)
 
 extern "C" void clock_face_create(void)
 {
-  load_display_preferences();
+  DeskClock::TimeSetupView::loadPreferences();
   lv_obj_t *screen = lv_screen_active();
   lv_obj_clean(screen);
   lv_obj_set_style_bg_color(screen, lv_color_hex(0xF7F9FC), 0);
@@ -745,49 +634,7 @@ extern "C" void clock_face_create(void)
 
   DeskClock::BrightnessSettingsView::create(screen, width, height, body_font());
 
-  time_setup_panel = DeskClock::UiWidgets::modalPanel(screen, width, height);
-
-  lv_obj_t *time_title = lv_label_create(time_setup_panel);
-  lv_obj_set_style_text_font(time_title, body_font(), 0);
-  set_text_color(time_title, 0x1F2933);
-  lv_label_set_text(time_title, "Time setup");
-  lv_obj_align(time_title, LV_ALIGN_TOP_LEFT, 14, 10);
-
-  time_setup_value_label = lv_label_create(time_setup_panel);
-  lv_obj_set_style_text_font(time_setup_value_label, body_font(), 0);
-  lv_obj_set_style_text_align(time_setup_value_label, LV_TEXT_ALIGN_CENTER, 0);
-  set_text_color(time_setup_value_label, 0x1F2933);
-  lv_label_set_text(time_setup_value_label, "---- -- --");
-  lv_obj_align(time_setup_value_label, LV_ALIGN_CENTER, 0, -36);
-
-  lv_obj_t *minus_hour = create_button(time_setup_panel, "-1h", 58, 36);
-  lv_obj_align(minus_hour, LV_ALIGN_LEFT_MID, 20, 18);
-  lv_obj_add_event_cb(minus_hour, adjust_time_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(-60)));
-  lv_obj_t *minus_minute = create_button(time_setup_panel, "-1m", 58, 36);
-  lv_obj_align(minus_minute, LV_ALIGN_LEFT_MID, 88, 18);
-  lv_obj_add_event_cb(minus_minute, adjust_time_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(-1)));
-  lv_obj_t *plus_minute = create_button(time_setup_panel, "+1m", 58, 36);
-  lv_obj_align(plus_minute, LV_ALIGN_RIGHT_MID, -88, 18);
-  lv_obj_add_event_cb(plus_minute, adjust_time_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(1)));
-  lv_obj_t *plus_hour = create_button(time_setup_panel, "+1h", 58, 36);
-  lv_obj_align(plus_hour, LV_ALIGN_RIGHT_MID, -20, 18);
-  lv_obj_add_event_cb(plus_hour, adjust_time_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(60)));
-
-  lv_obj_t *format_button = create_button(time_setup_panel, "12/24h", 76, 34);
-  lv_obj_align(format_button, LV_ALIGN_BOTTOM_LEFT, 14, -12);
-  lv_obj_add_event_cb(format_button, toggle_time_format_event, LV_EVENT_CLICKED, nullptr);
-  lv_obj_t *timezone_button = create_button(time_setup_panel, "TZ", 46, 34);
-  lv_obj_align(timezone_button, LV_ALIGN_BOTTOM_LEFT, 88, -12);
-  lv_obj_add_event_cb(timezone_button, cycle_timezone_event, LV_EVENT_CLICKED, nullptr);
-  lv_obj_t *wifi_button = create_button(time_setup_panel, "Wi-Fi", 58, 34);
-  lv_obj_align(wifi_button, LV_ALIGN_BOTTOM_LEFT, 140, -12);
-  lv_obj_add_event_cb(wifi_button, [](lv_event_t *) { DeskClock::NetworkSetupView::open(); }, LV_EVENT_CLICKED, nullptr);
-  lv_obj_t *save_button = create_button(time_setup_panel, "Set time", 92, 34);
-  lv_obj_align(save_button, LV_ALIGN_BOTTOM_MID, 38, -12);
-  lv_obj_add_event_cb(save_button, save_time_setup_event, LV_EVENT_CLICKED, nullptr);
-  lv_obj_t *close_time_button = create_button(time_setup_panel, "Close", 74, 34);
-  lv_obj_align(close_time_button, LV_ALIGN_BOTTOM_RIGHT, -14, -12);
-  lv_obj_add_event_cb(close_time_button, close_time_setup_event, LV_EVENT_CLICKED, nullptr);
+  DeskClock::TimeSetupView::create(screen, width, height, body_font());
 
   DeskClock::NetworkSetupView::create(screen, width, height, body_font());
 
