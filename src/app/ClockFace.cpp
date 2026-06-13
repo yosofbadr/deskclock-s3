@@ -7,8 +7,7 @@
 
 #include "AlarmService.h"
 #include "AlarmAlertView.h"
-#include "AlarmToneService.h"
-#include "BrightnessService.h"
+#include "BrightnessSettingsView.h"
 #include "NetworkService.h"
 #include "SettingsService.h"
 #include "TimeService.h"
@@ -27,14 +26,10 @@ lv_obj_t *setup_hint_label = nullptr;
 lv_obj_t *alarm_manager_panel = nullptr;
 lv_obj_t *time_setup_panel = nullptr;
 lv_obj_t *time_setup_value_label = nullptr;
-lv_obj_t *brightness_panel = nullptr;
-lv_obj_t *brightness_value_label = nullptr;
 lv_obj_t *network_panel = nullptr;
 lv_obj_t *network_value_label = nullptr;
 bool use_24_hour_time = true;
 DeskClock::DateTime editing_time;
-DeskClock::BrightnessSettings editing_brightness;
-DeskClock::AlarmToneSettings editing_tone;
 DeskClock::Alarm editing_alarm;
 bool editing_existing_alarm = false;
 uint8_t editing_alarm_id = 0;
@@ -693,81 +688,6 @@ void open_time_setup_event(lv_event_t *)
   lv_obj_move_foreground(time_setup_panel);
 }
 
-void refresh_brightness_setup()
-{
-  if (brightness_value_label == nullptr) {
-    return;
-  }
-  char buffer[96];
-  snprintf(
-      buffer,
-      sizeof(buffer),
-      "Day %u  Night %u\nNight starts %02u:00  Day starts %02u:00\nAudio %s  Vol %u",
-      editing_brightness.day_brightness,
-      editing_brightness.night_brightness,
-      editing_brightness.night_start_hour,
-      editing_brightness.day_start_hour,
-      editing_tone.enabled ? "on" : "off",
-      editing_tone.volume);
-  lv_label_set_text(brightness_value_label, buffer);
-}
-
-void close_brightness_event(lv_event_t *)
-{
-  lv_obj_add_flag(brightness_panel, LV_OBJ_FLAG_HIDDEN);
-}
-
-void save_brightness_event(lv_event_t *)
-{
-  DeskClock::BrightnessService::updateSettings(editing_brightness);
-  DeskClock::AlarmToneService::updateSettings(editing_tone);
-  lv_obj_add_flag(brightness_panel, LV_OBJ_FLAG_HIDDEN);
-}
-
-void adjust_brightness_event(lv_event_t *event)
-{
-  const uint8_t action = static_cast<uint8_t>(reinterpret_cast<uintptr_t>(lv_event_get_user_data(event)));
-  if (action == 1 || action == 2) {
-    const int32_t delta = action == 1 ? -20 : 20;
-    const int32_t next = static_cast<int32_t>(editing_brightness.day_brightness) + delta;
-    editing_brightness.day_brightness = static_cast<uint8_t>(next < 5 ? 5 : (next > 255 ? 255 : next));
-  } else if (action == 3 || action == 4) {
-    const int32_t delta = action == 3 ? -20 : 20;
-    const int32_t next = static_cast<int32_t>(editing_brightness.night_brightness) + delta;
-    editing_brightness.night_brightness = static_cast<uint8_t>(next < 5 ? 5 : (next > 255 ? 255 : next));
-  } else if (action == 5) {
-    editing_brightness.night_start_hour = static_cast<uint8_t>((editing_brightness.night_start_hour + 23U) % 24U);
-  } else if (action == 6) {
-    editing_brightness.night_start_hour = static_cast<uint8_t>((editing_brightness.night_start_hour + 1U) % 24U);
-  } else if (action == 7) {
-    editing_brightness.day_start_hour = static_cast<uint8_t>((editing_brightness.day_start_hour + 23U) % 24U);
-  } else if (action == 8) {
-    editing_brightness.day_start_hour = static_cast<uint8_t>((editing_brightness.day_start_hour + 1U) % 24U);
-  } else if (action == 9 || action == 10) {
-    const int32_t delta = action == 9 ? -10 : 10;
-    const int32_t next = static_cast<int32_t>(editing_tone.volume) + delta;
-    editing_tone.volume = static_cast<uint8_t>(next < 5 ? 5 : (next > 100 ? 100 : next));
-  } else if (action == 11) {
-    editing_tone.enabled = !editing_tone.enabled;
-  }
-  refresh_brightness_setup();
-}
-
-void test_alarm_tone_event(lv_event_t *)
-{
-  DeskClock::AlarmToneService::updateSettings(editing_tone);
-  DeskClock::AlarmToneService::testTone();
-}
-
-void open_brightness_event(lv_event_t *)
-{
-  editing_brightness = DeskClock::BrightnessService::settings();
-  editing_tone = DeskClock::AlarmToneService::settings();
-  refresh_brightness_setup();
-  lv_obj_clear_flag(brightness_panel, LV_OBJ_FLAG_HIDDEN);
-  lv_obj_move_foreground(brightness_panel);
-}
-
 void update_clock_from_time_service(lv_timer_t *)
 {
   const DeskClock::TimeSnapshot snapshot = DeskClock::TimeService::snapshot();
@@ -843,7 +763,7 @@ extern "C" void clock_face_create(void)
   lv_obj_set_style_border_width(asset_card, 3, 0);
   lv_obj_clear_flag(asset_card, LV_OBJ_FLAG_SCROLLABLE);
   lv_obj_add_flag(asset_card, LV_OBJ_FLAG_CLICKABLE);
-  lv_obj_add_event_cb(asset_card, open_brightness_event, LV_EVENT_CLICKED, nullptr);
+  lv_obj_add_event_cb(asset_card, [](lv_event_t *) { DeskClock::BrightnessSettingsView::open(); }, LV_EVENT_CLICKED, nullptr);
 
   lv_obj_t *asset_label = lv_label_create(asset_card);
   lv_obj_set_style_text_font(asset_label, body_font(), 0);
@@ -915,66 +835,7 @@ extern "C" void clock_face_create(void)
   lv_obj_add_flag(status_label, LV_OBJ_FLAG_CLICKABLE);
   lv_obj_add_event_cb(status_label, open_time_setup_event, LV_EVENT_CLICKED, nullptr);
 
-  brightness_panel = DeskClock::UiWidgets::modalPanel(screen, width, height);
-
-  lv_obj_t *brightness_title = lv_label_create(brightness_panel);
-  lv_obj_set_style_text_font(brightness_title, body_font(), 0);
-  set_text_color(brightness_title, 0x1F2933);
-  lv_label_set_text(brightness_title, "Brightness");
-  lv_obj_align(brightness_title, LV_ALIGN_TOP_LEFT, 14, 10);
-
-  brightness_value_label = lv_label_create(brightness_panel);
-  lv_obj_set_style_text_font(brightness_value_label, body_font(), 0);
-  lv_obj_set_style_text_align(brightness_value_label, LV_TEXT_ALIGN_CENTER, 0);
-  set_text_color(brightness_value_label, 0x1F2933);
-  lv_label_set_text(brightness_value_label, "Brightness");
-  lv_obj_align(brightness_value_label, LV_ALIGN_CENTER, 0, -38);
-
-  lv_obj_t *day_down = create_button(brightness_panel, "Day-", 62, 32);
-  lv_obj_align(day_down, LV_ALIGN_LEFT_MID, 16, 0);
-  lv_obj_add_event_cb(day_down, adjust_brightness_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<uintptr_t>(1)));
-  lv_obj_t *day_up = create_button(brightness_panel, "Day+", 62, 32);
-  lv_obj_align(day_up, LV_ALIGN_LEFT_MID, 86, 0);
-  lv_obj_add_event_cb(day_up, adjust_brightness_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<uintptr_t>(2)));
-  lv_obj_t *night_down = create_button(brightness_panel, "Night-", 70, 32);
-  lv_obj_align(night_down, LV_ALIGN_RIGHT_MID, -94, 0);
-  lv_obj_add_event_cb(night_down, adjust_brightness_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<uintptr_t>(3)));
-  lv_obj_t *night_up = create_button(brightness_panel, "Night+", 70, 32);
-  lv_obj_align(night_up, LV_ALIGN_RIGHT_MID, -16, 0);
-  lv_obj_add_event_cb(night_up, adjust_brightness_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<uintptr_t>(4)));
-
-  lv_obj_t *night_start_down = create_button(brightness_panel, "N-", 44, 30);
-  lv_obj_align(night_start_down, LV_ALIGN_LEFT_MID, 26, 42);
-  lv_obj_add_event_cb(night_start_down, adjust_brightness_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<uintptr_t>(5)));
-  lv_obj_t *night_start_up = create_button(brightness_panel, "N+", 44, 30);
-  lv_obj_align(night_start_up, LV_ALIGN_LEFT_MID, 78, 42);
-  lv_obj_add_event_cb(night_start_up, adjust_brightness_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<uintptr_t>(6)));
-  lv_obj_t *day_start_down = create_button(brightness_panel, "D-", 44, 30);
-  lv_obj_align(day_start_down, LV_ALIGN_RIGHT_MID, -78, 42);
-  lv_obj_add_event_cb(day_start_down, adjust_brightness_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<uintptr_t>(7)));
-  lv_obj_t *day_start_up = create_button(brightness_panel, "D+", 44, 30);
-  lv_obj_align(day_start_up, LV_ALIGN_RIGHT_MID, -26, 42);
-  lv_obj_add_event_cb(day_start_up, adjust_brightness_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<uintptr_t>(8)));
-
-  lv_obj_t *vol_down = create_button(brightness_panel, "Vol-", 54, 30);
-  lv_obj_align(vol_down, LV_ALIGN_LEFT_MID, 148, 42);
-  lv_obj_add_event_cb(vol_down, adjust_brightness_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<uintptr_t>(9)));
-  lv_obj_t *vol_up = create_button(brightness_panel, "Vol+", 54, 30);
-  lv_obj_align(vol_up, LV_ALIGN_RIGHT_MID, -148, 42);
-  lv_obj_add_event_cb(vol_up, adjust_brightness_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<uintptr_t>(10)));
-
-  lv_obj_t *audio_toggle = create_button(brightness_panel, "Audio", 64, 34);
-  lv_obj_align(audio_toggle, LV_ALIGN_BOTTOM_LEFT, 14, -12);
-  lv_obj_add_event_cb(audio_toggle, adjust_brightness_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<uintptr_t>(11)));
-  lv_obj_t *test_tone = create_button(brightness_panel, "Test", 58, 34);
-  lv_obj_align(test_tone, LV_ALIGN_BOTTOM_LEFT, 84, -12);
-  lv_obj_add_event_cb(test_tone, test_alarm_tone_event, LV_EVENT_CLICKED, nullptr);
-  lv_obj_t *save_brightness = create_button(brightness_panel, "Save", 74, 34);
-  lv_obj_align(save_brightness, LV_ALIGN_BOTTOM_MID, 24, -12);
-  lv_obj_add_event_cb(save_brightness, save_brightness_event, LV_EVENT_CLICKED, nullptr);
-  lv_obj_t *close_brightness = create_button(brightness_panel, "Close", 74, 34);
-  lv_obj_align(close_brightness, LV_ALIGN_BOTTOM_RIGHT, -14, -12);
-  lv_obj_add_event_cb(close_brightness, close_brightness_event, LV_EVENT_CLICKED, nullptr);
+  DeskClock::BrightnessSettingsView::create(screen, width, height, body_font());
 
   time_setup_panel = DeskClock::UiWidgets::modalPanel(screen, width, height);
 
