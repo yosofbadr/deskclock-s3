@@ -22,6 +22,18 @@ _Avoid_: cloud reminder, notification-only event, productivity timer
 An alarm should fire from local device state even when optional services are unavailable. Network sync may improve time accuracy, but alarms must not depend on weather, generated messages, or LLM responses.
 _Avoid_: AI-gated alarm, internet-required alarm
 
+**Alarm Alert**:
+The visible and optionally audible signal produced when an alarm fires. It must always include a visual alert, while sound may be added when speaker output is available and configured.
+_Avoid_: audio-only alarm, speaker-required alarm
+
+**Alarm Dismissal**:
+The user action that stops an active alarm alert. It should be available from both the touchscreen and the BOOT button so the alarm can be stopped reliably in normal use.
+_Avoid_: touch-only dismissal, app-only dismissal, power-button-required dismissal
+
+**Snooze**:
+A temporary postponement of an active alarm alert. In v1, snooze should use a fixed 10-minute delay rather than a user-configurable duration.
+_Avoid_: custom snooze rule, theme-owned snooze behavior
+
 **Sync Status**:
 A small visible cue that tells whether the displayed time is recently externally confirmed, locally retained while offline, or not yet trustworthy. It should build trust without becoming the main focus of the clock face.
 _Avoid_: Wi-Fi status, connection badge
