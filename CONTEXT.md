@@ -79,8 +79,8 @@ The main clock view is meant to sit horizontally on a desk, prioritizing large r
 _Avoid_: portrait clock face, vertical widget
 
 **Visual Theme**:
-A selectable visual presentation for the clock. A visual theme may change colors, fonts, spacing, backgrounds, and decorative assets, but must not change timekeeping, alarm behavior, setup, or reliability behavior.
-_Avoid_: behavioral theme, clock type, mode
+A selectable visual presentation for the clock. A visual theme may change colors, fonts, spacing, backgrounds, decorative assets, and character identity, but must not change the clock's product identity, timekeeping, alarm behavior, setup, or reliability behavior.
+_Avoid_: behavioral theme, clock type, mode, product identity
 
 **Theme Asset**:
 A user-supplied image, decorative graphic, font, or other visual material used by a visual theme. Theme assets are replaceable presentation content rather than core clock behavior.

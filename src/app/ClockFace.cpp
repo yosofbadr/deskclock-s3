@@ -1,18 +1,17 @@
 #include "ClockFace.h"
 
-#include <Arduino.h>
 #include <stdio.h>
 
+#include "TimeService.h"
 #include "lvgl.h"
 
 namespace {
 
 lv_obj_t *time_label = nullptr;
+lv_obj_t *date_label = nullptr;
 lv_obj_t *seconds_label = nullptr;
+lv_obj_t *status_label = nullptr;
 lv_obj_t *sync_dot = nullptr;
-
-constexpr uint8_t kStartHour = 12;
-constexpr uint8_t kStartMinute = 48;
 
 const lv_font_t *time_font()
 {
@@ -37,24 +36,98 @@ void set_text_color(lv_obj_t *obj, uint32_t color)
   lv_obj_set_style_text_color(obj, lv_color_hex(color), 0);
 }
 
-void update_clock_preview(lv_timer_t *)
+const char *weekday_name(uint8_t week)
 {
-  const uint32_t elapsed_seconds = millis() / 1000;
-  const uint32_t total_seconds = (kStartHour * 3600UL) + (kStartMinute * 60UL) + elapsed_seconds;
-  const uint8_t hour = (total_seconds / 3600UL) % 24;
-  const uint8_t minute = (total_seconds / 60UL) % 60;
-  const uint8_t second = total_seconds % 60;
+  static constexpr const char *names[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
+  return week < 7 ? names[week] : "---";
+}
+
+const char *month_name(uint8_t month)
+{
+  static constexpr const char *names[] = {
+      "---", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+  return month <= 12 ? names[month] : "---";
+}
+
+uint32_t sync_dot_color(DeskClock::SyncState state, bool blink)
+{
+  switch (state) {
+  case DeskClock::SyncState::SyncedRecently:
+    return blink ? 0x10B981 : 0x6EE7B7; // green
+  case DeskClock::SyncState::LocalRetained:
+    return blink ? 0xF59E0B : 0xFCD34D; // amber
+  case DeskClock::SyncState::Unreliable:
+  default:
+    return blink ? 0xEF4444 : 0xFCA5A5; // red
+  }
+}
+
+const char *status_text(const DeskClock::TimeSnapshot &snapshot)
+{
+  if (!snapshot.rtc_available) {
+    return "rtc unavailable";
+  }
+  if (!snapshot.now.valid) {
+    return "time not set";
+  }
+  if (snapshot.bootstrapped_from_compile_time) {
+    return "rtc build seed";
+  }
+  switch (snapshot.sync_state) {
+  case DeskClock::SyncState::SyncedRecently:
+    return "synced";
+  case DeskClock::SyncState::LocalRetained:
+    return "rtc local";
+  case DeskClock::SyncState::Unreliable:
+  default:
+    return "time not set";
+  }
+}
+
+void realign_time_details()
+{
+  lv_obj_update_layout(time_label);
+  lv_obj_align_to(date_label, time_label, LV_ALIGN_OUT_BOTTOM_LEFT, 4, 2);
+  lv_obj_align_to(seconds_label, time_label, LV_ALIGN_OUT_RIGHT_MID, 10, 8);
+}
+
+void update_clock_from_time_service(lv_timer_t *)
+{
+  const DeskClock::TimeSnapshot snapshot = DeskClock::TimeService::snapshot();
+  const bool blink = snapshot.now.valid ? ((snapshot.now.second % 2U) == 0U) : true;
+
+  if (!snapshot.now.valid) {
+    lv_label_set_text(time_label, "--:--");
+    lv_label_set_text(date_label, "Time not set");
+    lv_label_set_text(seconds_label, "unreliable");
+    lv_label_set_text(status_label, status_text(snapshot));
+    lv_obj_set_style_bg_color(sync_dot, lv_color_hex(sync_dot_color(DeskClock::SyncState::Unreliable, blink)), 0);
+    realign_time_details();
+    return;
+  }
 
   char time_buffer[6];
-  snprintf(time_buffer, sizeof(time_buffer), "%02u:%02u", hour, minute);
+  snprintf(time_buffer, sizeof(time_buffer), "%02u:%02u", snapshot.now.hour, snapshot.now.minute);
   lv_label_set_text(time_label, time_buffer);
 
+  char date_buffer[20];
+  snprintf(
+      date_buffer,
+      sizeof(date_buffer),
+      "%s, %s %u",
+      weekday_name(snapshot.now.week),
+      month_name(snapshot.now.month),
+      snapshot.now.day);
+  lv_label_set_text(date_label, date_buffer);
+
   char seconds_buffer[16];
-  snprintf(seconds_buffer, sizeof(seconds_buffer), ":%02u  local", second);
+  snprintf(seconds_buffer, sizeof(seconds_buffer), ":%02u  local", snapshot.now.second);
   lv_label_set_text(seconds_label, seconds_buffer);
 
-  const bool blink = (second % 2U) == 0U;
-  lv_obj_set_style_bg_color(sync_dot, lv_color_hex(blink ? 0x3B82F6 : 0x93C5FD), 0);
+  lv_label_set_text(status_label, status_text(snapshot));
+  lv_obj_set_style_bg_color(sync_dot, lv_color_hex(sync_dot_color(snapshot.sync_state, blink)), 0);
+  realign_time_details();
 }
 
 } // namespace
@@ -107,37 +180,37 @@ extern "C" void clock_face_create(void)
   time_label = lv_label_create(clock_panel);
   lv_obj_set_style_text_font(time_label, time_font(), 0);
   set_text_color(time_label, 0x1F2933);
-  lv_label_set_text(time_label, "12:48");
+  lv_label_set_text(time_label, "--:--");
   lv_obj_align(time_label, LV_ALIGN_LEFT_MID, 28, -24);
 
-  lv_obj_t *date_label = lv_label_create(clock_panel);
+  date_label = lv_label_create(clock_panel);
   lv_obj_set_style_text_font(date_label, body_font(), 0);
   set_text_color(date_label, 0x52616F);
-  lv_label_set_text(date_label, "Tue, Jun 11");
+  lv_label_set_text(date_label, "Time not set");
   lv_obj_align_to(date_label, time_label, LV_ALIGN_OUT_BOTTOM_LEFT, 4, 2);
 
   seconds_label = lv_label_create(clock_panel);
   lv_obj_set_style_text_font(seconds_label, body_font(), 0);
   set_text_color(seconds_label, 0x627D98);
-  lv_label_set_text(seconds_label, ":00  local");
+  lv_label_set_text(seconds_label, "unreliable");
   lv_obj_align_to(seconds_label, time_label, LV_ALIGN_OUT_RIGHT_MID, 10, 8);
 
   sync_dot = lv_obj_create(clock_panel);
   lv_obj_remove_style_all(sync_dot);
   lv_obj_set_size(sync_dot, 14, 14);
   lv_obj_set_style_radius(sync_dot, LV_RADIUS_CIRCLE, 0);
-  lv_obj_set_style_bg_color(sync_dot, lv_color_hex(0x3B82F6), 0);
+  lv_obj_set_style_bg_color(sync_dot, lv_color_hex(0xEF4444), 0);
   lv_obj_set_style_bg_opa(sync_dot, LV_OPA_COVER, 0);
   lv_obj_set_style_border_color(sync_dot, lv_color_hex(0xFFFFFF), 0);
   lv_obj_set_style_border_width(sync_dot, 2, 0);
   lv_obj_align(sync_dot, LV_ALIGN_TOP_RIGHT, -18, 18);
 
-  lv_obj_t *status_label = lv_label_create(clock_panel);
+  status_label = lv_label_create(clock_panel);
   lv_obj_set_style_text_font(status_label, body_font(), 0);
   set_text_color(status_label, 0x829AB1);
-  lv_label_set_text(status_label, "clock preview");
+  lv_label_set_text(status_label, "time not set");
   lv_obj_align(status_label, LV_ALIGN_BOTTOM_RIGHT, -18, -12);
 
-  lv_timer_create(update_clock_preview, 250, nullptr);
-  update_clock_preview(nullptr);
+  lv_timer_create(update_clock_from_time_service, 250, nullptr);
+  update_clock_from_time_service(nullptr);
 }

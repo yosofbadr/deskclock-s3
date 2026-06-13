@@ -25,12 +25,12 @@ Optional connected features should be framed as opt-in extensions:
 
 ## Current milestone
 
-The current firmware brings up the board display with LVGL in landscape orientation and shows a static clock-shell layout:
+The current firmware brings up the board display with LVGL in landscape orientation and shows an RTC-backed clock-shell layout:
 
 - neutral theme asset placeholder on the left
-- large time area on the right
+- large RTC-backed time area on the right
 - date line
-- sync status dot placeholder
+- sync status dot for local/offline time
 
 ## Build and flash
 
