@@ -11,6 +11,7 @@ namespace {
 
 lv_obj_t *alert_panel = nullptr;
 lv_obj_t *alert_time_label = nullptr;
+lv_obj_t *alert_hint_label = nullptr;
 
 void dismiss_alert_event(lv_event_t *)
 {
@@ -43,7 +44,13 @@ void create(lv_obj_t *parent, int32_t width, int32_t height, const lv_font_t *ti
   lv_obj_set_style_text_font(alert_time_label, title_font, 0);
   UiWidgets::setTextColor(alert_time_label, 0x991B1B);
   lv_label_set_text(alert_time_label, "Alarm");
-  lv_obj_align(alert_time_label, LV_ALIGN_CENTER, 0, -34);
+  lv_obj_align(alert_time_label, LV_ALIGN_CENTER, 0, -42);
+
+  alert_hint_label = lv_label_create(alert_panel);
+  UiWidgets::setTextColor(alert_hint_label, 0x7F1D1D);
+  lv_label_set_text(alert_hint_label, "Tap Dismiss or press BOOT to stop");
+  lv_obj_set_style_text_align(alert_hint_label, LV_TEXT_ALIGN_CENTER, 0);
+  lv_obj_align(alert_hint_label, LV_ALIGN_CENTER, 0, 8);
 
   lv_obj_t *snooze_button = UiWidgets::button(alert_panel, "Snooze 10m", 128, 46);
   lv_obj_align(snooze_button, LV_ALIGN_BOTTOM_LEFT, 14, -14);
@@ -56,7 +63,7 @@ void create(lv_obj_t *parent, int32_t width, int32_t height, const lv_font_t *ti
 
 void update(const DateTime &now)
 {
-  if (alert_panel == nullptr || alert_time_label == nullptr) {
+  if (alert_panel == nullptr || alert_time_label == nullptr || alert_hint_label == nullptr) {
     return;
   }
 
@@ -69,7 +76,9 @@ void update(const DateTime &now)
   char buffer[40];
   snprintf(buffer, sizeof(buffer), "Alarm %02u:%02u", alert.alarm.hour, alert.alarm.minute);
   lv_label_set_text(alert_time_label, buffer);
+  lv_label_set_text(alert_hint_label, alert.sound_allowed ? "Tap Dismiss or press BOOT to stop" : "Visual alert: tap Dismiss or Snooze");
   lv_obj_clear_flag(alert_panel, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_move_foreground(alert_panel);
 
   if (now.valid && (now.second % 2U) == 0U) {
     lv_obj_set_style_bg_color(alert_panel, lv_color_hex(0xFEE2E2), 0);
