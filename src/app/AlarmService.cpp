@@ -15,6 +15,8 @@ Alarm alarm_list[kMaxAlarms];
 size_t alarm_count = 0;
 uint8_t next_alarm_id = 1;
 int64_t last_seen_now = -1;
+uint8_t last_triggered_alarm_id = 0;
+int64_t last_triggered_minute = -1;
 ActiveAlarmAlert active_alert;
 
 constexpr uint32_t kAlarmStoreMagic = 0xD35C10C1UL;
@@ -254,6 +256,11 @@ bool same_alarm_minute(const Alarm &alarm, const DateTime &now)
   return recurrence_allows_week(alarm.recurrence, now.week) && alarm.hour == now.hour && alarm.minute == now.minute;
 }
 
+int64_t minute_key_from_seconds(int64_t seconds)
+{
+  return seconds < 0 ? -1 : seconds / 60LL;
+}
+
 bool disable_one_time_alarm_unlocked(uint8_t id)
 {
   for (size_t index = 0; index < alarm_count; ++index) {
@@ -377,6 +384,8 @@ void begin(const DateTime &now)
   portENTER_CRITICAL(&alarm_mux);
   alarm_count = 0;
   next_alarm_id = 1;
+  last_triggered_alarm_id = 0;
+  last_triggered_minute = -1;
   active_alert = ActiveAlarmAlert();
   portEXIT_CRITICAL(&alarm_mux);
 
@@ -426,6 +435,7 @@ void loop(const DateTime &now)
   }
   last_seen_now = now_seconds;
 
+  const int64_t now_minute_key = minute_key_from_seconds(now_seconds);
   uint8_t expired_sound_alarm_id = 0;
 
   portENTER_CRITICAL(&alarm_mux);
@@ -443,7 +453,12 @@ void loop(const DateTime &now)
       if (!alarm.enabled || !same_alarm_minute(alarm, now)) {
         continue;
       }
+      if (last_triggered_alarm_id == alarm.id && last_triggered_minute == now_minute_key) {
+        continue;
+      }
 
+      last_triggered_alarm_id = alarm.id;
+      last_triggered_minute = now_minute_key;
       active_alert.active = true;
       active_alert.alarm = alarm;
       active_alert.started_at = now;
