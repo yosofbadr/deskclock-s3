@@ -18,6 +18,8 @@ int64_t last_seen_now = -1;
 uint8_t last_triggered_alarm_id = 0;
 int64_t last_triggered_minute = -1;
 ActiveAlarmAlert active_alert;
+bool snoozed_alarm_pending = false;
+Alarm snoozed_alarm;
 
 constexpr uint32_t kAlarmStoreMagic = 0xD35C10C1UL;
 constexpr uint16_t kAlarmStoreVersion = 1;
@@ -261,6 +263,16 @@ int64_t minute_key_from_seconds(int64_t seconds)
   return seconds < 0 ? -1 : seconds / 60LL;
 }
 
+void activate_alarm_unlocked(const Alarm &alarm, const DateTime &now, int64_t now_minute_key)
+{
+  last_triggered_alarm_id = alarm.id;
+  last_triggered_minute = now_minute_key;
+  active_alert.active = true;
+  active_alert.alarm = alarm;
+  active_alert.started_at = now;
+  active_alert.sound_allowed = true;
+}
+
 bool disable_one_time_alarm_unlocked(uint8_t id)
 {
   for (size_t index = 0; index < alarm_count; ++index) {
@@ -387,6 +399,8 @@ void begin(const DateTime &now)
   last_triggered_alarm_id = 0;
   last_triggered_minute = -1;
   active_alert = ActiveAlarmAlert();
+  snoozed_alarm_pending = false;
+  snoozed_alarm = Alarm();
   portEXIT_CRITICAL(&alarm_mux);
 
   (void)load_alarms();
@@ -447,6 +461,12 @@ void loop(const DateTime &now)
     }
   }
 
+  if (!active_alert.active && snoozed_alarm_pending && same_alarm_minute(snoozed_alarm, now)) {
+    activate_alarm_unlocked(snoozed_alarm, now, now_minute_key);
+    snoozed_alarm_pending = false;
+    Serial.printf("AlarmService: snoozed alarm %u active at %02u:%02u\n", active_alert.alarm.id, now.hour, now.minute);
+  }
+
   if (!active_alert.active) {
     for (size_t index = 0; index < alarm_count; ++index) {
       Alarm &alarm = alarm_list[index];
@@ -457,12 +477,7 @@ void loop(const DateTime &now)
         continue;
       }
 
-      last_triggered_alarm_id = alarm.id;
-      last_triggered_minute = now_minute_key;
-      active_alert.active = true;
-      active_alert.alarm = alarm;
-      active_alert.started_at = now;
-      active_alert.sound_allowed = true;
+      activate_alarm_unlocked(alarm, now, now_minute_key);
       const bool disabled_one_time = disable_one_time_alarm_unlocked(alarm.id);
       Serial.printf("AlarmService: alarm %u active at %02u:%02u\n", alarm.id, now.hour, now.minute);
       if (disabled_one_time) {
@@ -516,7 +531,6 @@ bool snoozeActiveAlert(const DateTime &now)
 
   const DateTime snoozed_at = from_epoch_seconds(now_seconds + static_cast<int64_t>(kSnoozeMinutes) * 60LL);
   Alarm snoozed = alert.alarm;
-  snoozed.id = 0;
   snoozed.enabled = true;
   snoozed.recurrence = AlarmRecurrence::Once;
   snoozed.year = snoozed_at.year;
@@ -524,14 +538,15 @@ bool snoozeActiveAlert(const DateTime &now)
   snoozed.day = snoozed_at.day;
   snoozed.hour = snoozed_at.hour;
   snoozed.minute = snoozed_at.minute;
-  snoozed.development_seed = false;
+  snoozed.development_seed = true;
 
-  uint8_t id = 0;
-  const bool added = addAlarm(snoozed, &id);
-  if (added) {
-    Serial.printf("AlarmService: snoozed alarm %u as one-time alarm %u for %02u:%02u\n", alert.alarm.id, id, snoozed.hour, snoozed.minute);
-  }
-  return added;
+  portENTER_CRITICAL(&alarm_mux);
+  snoozed_alarm = snoozed;
+  snoozed_alarm_pending = true;
+  portEXIT_CRITICAL(&alarm_mux);
+
+  Serial.printf("AlarmService: snoozed alarm %u for %02u:%02u\n", alert.alarm.id, snoozed.hour, snoozed.minute);
+  return true;
 }
 
 ActiveAlarmAlert activeAlert()
@@ -648,9 +663,20 @@ size_t copyAlarms(Alarm *destination, size_t capacity)
 AlarmOccurrence nextAlarm(const DateTime &now)
 {
   Alarm snapshot[kMaxAlarms];
-  const size_t snapshot_count = copy_alarm_list(snapshot, kMaxAlarms);
+  Alarm snoozed_snapshot;
+  bool has_snoozed_snapshot = false;
+
+  portENTER_CRITICAL(&alarm_mux);
+  const size_t snapshot_count = alarm_count < kMaxAlarms ? alarm_count : kMaxAlarms;
+  memcpy(snapshot, alarm_list, snapshot_count * sizeof(Alarm));
+  has_snoozed_snapshot = snoozed_alarm_pending;
+  snoozed_snapshot = snoozed_alarm;
+  portEXIT_CRITICAL(&alarm_mux);
 
   AlarmOccurrence best;
+  if (has_snoozed_snapshot) {
+    (void)occurrence_for_alarm(snoozed_snapshot, now, best);
+  }
   for (size_t index = 0; index < snapshot_count; ++index) {
     AlarmOccurrence candidate;
     if (!occurrence_for_alarm(snapshot[index], now, candidate)) {
