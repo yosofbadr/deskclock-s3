@@ -96,7 +96,9 @@ void loadPreferences()
 {
   Preferences preferences;
   if (preferences.begin("deskclock", true)) {
-    use_24_hour_time = preferences.getBool("time24", true);
+    if (preferences.isKey("time24")) {
+      use_24_hour_time = preferences.getBool("time24", true);
+    }
     preferences.end();
   }
 }
