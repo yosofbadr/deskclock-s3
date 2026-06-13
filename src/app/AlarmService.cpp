@@ -291,7 +291,7 @@ bool persist_alarm_snapshot(const Alarm *alarms, size_t count, uint8_t next_id)
   store.next_id = next_id == 0 ? 1 : next_id;
   for (size_t index = 0; index < store.count; ++index) {
     store.alarms[index] = alarms[index];
-    store.alarms[index].development_seed = false;
+    store.alarms[index].transient = false;
   }
 
   Preferences preferences;
@@ -316,7 +316,7 @@ bool save_alarms()
 
   portENTER_CRITICAL(&alarm_mux);
   for (size_t index = 0; index < alarm_count && snapshot_count < kMaxAlarms; ++index) {
-    if (alarm_list[index].development_seed) {
+    if (alarm_list[index].transient) {
       continue;
     }
     snapshot[snapshot_count++] = alarm_list[index];
@@ -356,7 +356,7 @@ bool load_alarms()
   next_alarm_id = store.next_id == 0 ? 1 : store.next_id;
   for (size_t index = 0; index < store.count; ++index) {
     Alarm alarm = store.alarms[index];
-    alarm.development_seed = false;
+    alarm.transient = false;
     if (alarm.id == 0 || !append_alarm_unlocked(alarm)) {
       continue;
     }
@@ -538,7 +538,7 @@ bool snoozeActiveAlert(const DateTime &now)
   snoozed.day = snoozed_at.day;
   snoozed.hour = snoozed_at.hour;
   snoozed.minute = snoozed_at.minute;
-  snoozed.development_seed = true;
+  snoozed.transient = true;
 
   portENTER_CRITICAL(&alarm_mux);
   snoozed_alarm = snoozed;
@@ -576,7 +576,7 @@ bool addAlarm(const Alarm &alarm, uint8_t *created_id)
   if (added && created_id != nullptr) {
     *created_id = copy.id;
   }
-  if (added && !copy.development_seed) {
+  if (added && !copy.transient) {
     save_alarms();
   }
   return added;

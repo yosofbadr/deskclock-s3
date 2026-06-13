@@ -27,7 +27,7 @@ struct Alarm {
   uint8_t day = 0;    // Used for one-time alarms.
   uint8_t hour = 0;
   uint8_t minute = 0;
-  bool development_seed = false;
+  bool transient = false;
 };
 
 struct AlarmOccurrence {
