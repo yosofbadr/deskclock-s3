@@ -361,47 +361,6 @@ size_t copy_alarm_list(Alarm *destination, size_t capacity)
   return copied;
 }
 
-void seed_development_alarm(const DateTime &now)
-{
-  if (!now.valid) {
-    return;
-  }
-
-  const int64_t now_seconds = to_epoch_seconds(now);
-  if (now_seconds < 0) {
-    return;
-  }
-
-  const DateTime fire_at = from_epoch_seconds(((now_seconds + 2 * 60 + 59) / 60) * 60);
-  Alarm alarm;
-  alarm.enabled = true;
-  alarm.recurrence = AlarmRecurrence::Once;
-  alarm.year = fire_at.year;
-  alarm.month = fire_at.month;
-  alarm.day = fire_at.day;
-  alarm.hour = fire_at.hour;
-  alarm.minute = fire_at.minute;
-  alarm.development_seed = true;
-
-  bool added = false;
-  portENTER_CRITICAL(&alarm_mux);
-  if (alarm_count == 0) {
-    alarm.id = allocate_alarm_id();
-    added = append_alarm_unlocked(alarm);
-  }
-  portEXIT_CRITICAL(&alarm_mux);
-
-  if (added) {
-    Serial.printf(
-        "AlarmService: seeded temporary development alarm for %04u-%02u-%02u %02u:%02u\n",
-        alarm.year,
-        alarm.month,
-        alarm.day,
-        alarm.hour,
-        alarm.minute);
-  }
-}
-
 } // namespace
 
 namespace AlarmService {
@@ -414,11 +373,8 @@ void begin(const DateTime &now)
   active_alert = ActiveAlarmAlert();
   portEXIT_CRITICAL(&alarm_mux);
 
-  const bool loaded = load_alarms();
+  (void)load_alarms();
   last_seen_now = to_epoch_seconds(now);
-  if (!loaded || count() == 0) {
-    seed_development_alarm(now);
-  }
 }
 
 void loop(const DateTime &now)
