@@ -11,6 +11,7 @@
 #include "NetworkService.h"
 #include "SettingsService.h"
 #include "TimeService.h"
+#include "UiWidgets.h"
 #include "lvgl.h"
 
 namespace {
@@ -59,7 +60,7 @@ const lv_font_t *body_font()
 
 void set_text_color(lv_obj_t *obj, uint32_t color)
 {
-  lv_obj_set_style_text_color(obj, lv_color_hex(color), 0);
+  DeskClock::UiWidgets::setTextColor(obj, color);
 }
 
 const char *weekday_name(uint8_t week)
@@ -237,12 +238,7 @@ DeskClock::Alarm *find_alarm_by_id(uint8_t id, DeskClock::Alarm *alarms, size_t 
 
 lv_obj_t *create_button(lv_obj_t *parent, const char *text, int32_t width, int32_t height)
 {
-  lv_obj_t *button = lv_button_create(parent);
-  lv_obj_set_size(button, width, height);
-  lv_obj_t *label = lv_label_create(button);
-  lv_label_set_text(label, text);
-  lv_obj_center(label);
-  return button;
+  return DeskClock::UiWidgets::button(parent, text, width, height);
 }
 
 lv_obj_t *create_password_key(lv_obj_t *parent, char value, int32_t x, int32_t y)
@@ -950,16 +946,7 @@ extern "C" void clock_face_create(void)
   lv_obj_add_flag(status_label, LV_OBJ_FLAG_CLICKABLE);
   lv_obj_add_event_cb(status_label, open_time_setup_event, LV_EVENT_CLICKED, nullptr);
 
-  brightness_panel = lv_obj_create(screen);
-  lv_obj_set_size(brightness_panel, width - 28, height - 28);
-  lv_obj_center(brightness_panel);
-  lv_obj_set_style_radius(brightness_panel, 18, 0);
-  lv_obj_set_style_bg_color(brightness_panel, lv_color_hex(0xFFFFFF), 0);
-  lv_obj_set_style_bg_opa(brightness_panel, LV_OPA_COVER, 0);
-  lv_obj_set_style_border_color(brightness_panel, lv_color_hex(0xCBD5E1), 0);
-  lv_obj_set_style_border_width(brightness_panel, 2, 0);
-  lv_obj_clear_flag(brightness_panel, LV_OBJ_FLAG_SCROLLABLE);
-  lv_obj_add_flag(brightness_panel, LV_OBJ_FLAG_HIDDEN);
+  brightness_panel = DeskClock::UiWidgets::modalPanel(screen, width, height);
 
   lv_obj_t *brightness_title = lv_label_create(brightness_panel);
   lv_obj_set_style_text_font(brightness_title, body_font(), 0);
@@ -1020,16 +1007,7 @@ extern "C" void clock_face_create(void)
   lv_obj_align(close_brightness, LV_ALIGN_BOTTOM_RIGHT, -14, -12);
   lv_obj_add_event_cb(close_brightness, close_brightness_event, LV_EVENT_CLICKED, nullptr);
 
-  time_setup_panel = lv_obj_create(screen);
-  lv_obj_set_size(time_setup_panel, width - 28, height - 28);
-  lv_obj_center(time_setup_panel);
-  lv_obj_set_style_radius(time_setup_panel, 18, 0);
-  lv_obj_set_style_bg_color(time_setup_panel, lv_color_hex(0xFFFFFF), 0);
-  lv_obj_set_style_bg_opa(time_setup_panel, LV_OPA_COVER, 0);
-  lv_obj_set_style_border_color(time_setup_panel, lv_color_hex(0xCBD5E1), 0);
-  lv_obj_set_style_border_width(time_setup_panel, 2, 0);
-  lv_obj_clear_flag(time_setup_panel, LV_OBJ_FLAG_SCROLLABLE);
-  lv_obj_add_flag(time_setup_panel, LV_OBJ_FLAG_HIDDEN);
+  time_setup_panel = DeskClock::UiWidgets::modalPanel(screen, width, height);
 
   lv_obj_t *time_title = lv_label_create(time_setup_panel);
   lv_obj_set_style_text_font(time_title, body_font(), 0);
@@ -1073,16 +1051,7 @@ extern "C" void clock_face_create(void)
   lv_obj_align(close_time_button, LV_ALIGN_BOTTOM_RIGHT, -14, -12);
   lv_obj_add_event_cb(close_time_button, close_time_setup_event, LV_EVENT_CLICKED, nullptr);
 
-  network_panel = lv_obj_create(screen);
-  lv_obj_set_size(network_panel, width - 28, height - 28);
-  lv_obj_center(network_panel);
-  lv_obj_set_style_radius(network_panel, 18, 0);
-  lv_obj_set_style_bg_color(network_panel, lv_color_hex(0xFFFFFF), 0);
-  lv_obj_set_style_bg_opa(network_panel, LV_OPA_COVER, 0);
-  lv_obj_set_style_border_color(network_panel, lv_color_hex(0xCBD5E1), 0);
-  lv_obj_set_style_border_width(network_panel, 2, 0);
-  lv_obj_clear_flag(network_panel, LV_OBJ_FLAG_SCROLLABLE);
-  lv_obj_add_flag(network_panel, LV_OBJ_FLAG_HIDDEN);
+  network_panel = DeskClock::UiWidgets::modalPanel(screen, width, height);
 
   lv_obj_t *network_title = lv_label_create(network_panel);
   lv_obj_set_style_text_font(network_title, body_font(), 0);
@@ -1140,16 +1109,7 @@ extern "C" void clock_face_create(void)
   lv_obj_align(close_network, LV_ALIGN_BOTTOM_RIGHT, -14, -12);
   lv_obj_add_event_cb(close_network, close_network_event, LV_EVENT_CLICKED, nullptr);
 
-  alarm_manager_panel = lv_obj_create(screen);
-  lv_obj_set_size(alarm_manager_panel, width - 28, height - 28);
-  lv_obj_center(alarm_manager_panel);
-  lv_obj_set_style_radius(alarm_manager_panel, 18, 0);
-  lv_obj_set_style_bg_color(alarm_manager_panel, lv_color_hex(0xFFFFFF), 0);
-  lv_obj_set_style_bg_opa(alarm_manager_panel, LV_OPA_COVER, 0);
-  lv_obj_set_style_border_color(alarm_manager_panel, lv_color_hex(0xCBD5E1), 0);
-  lv_obj_set_style_border_width(alarm_manager_panel, 2, 0);
-  lv_obj_clear_flag(alarm_manager_panel, LV_OBJ_FLAG_SCROLLABLE);
-  lv_obj_add_flag(alarm_manager_panel, LV_OBJ_FLAG_HIDDEN);
+  alarm_manager_panel = DeskClock::UiWidgets::modalPanel(screen, width, height);
   refresh_alarm_manager();
 
   alert_panel = lv_obj_create(screen);
