@@ -369,17 +369,17 @@ void refresh_editor()
     lv_obj_add_state(date_up, LV_STATE_DISABLED);
   }
 
-  lv_obj_t *once = UiWidgets::button(panel, "Once", 72, 28);
-  lv_obj_align(once, LV_ALIGN_BOTTOM_LEFT, 12, -48);
+  lv_obj_t *once = UiWidgets::button(panel, "Once", 86, 28);
+  lv_obj_align(once, LV_ALIGN_BOTTOM_LEFT, 10, -48);
   lv_obj_add_event_cb(once, recurrence_button_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<uintptr_t>(AlarmRecurrence::Once)));
-  lv_obj_t *daily = UiWidgets::button(panel, "Daily", 72, 28);
-  lv_obj_align(daily, LV_ALIGN_BOTTOM_LEFT, 90, -48);
+  lv_obj_t *daily = UiWidgets::button(panel, "Daily", 86, 28);
+  lv_obj_align(daily, LV_ALIGN_BOTTOM_LEFT, 102, -48);
   lv_obj_add_event_cb(daily, recurrence_button_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<uintptr_t>(AlarmRecurrence::Daily)));
-  lv_obj_t *weekdays = UiWidgets::button(panel, "Week", 72, 28);
-  lv_obj_align(weekdays, LV_ALIGN_BOTTOM_LEFT, 168, -48);
+  lv_obj_t *weekdays = UiWidgets::button(panel, "Weekdays", 96, 28);
+  lv_obj_align(weekdays, LV_ALIGN_BOTTOM_LEFT, 194, -48);
   lv_obj_add_event_cb(weekdays, recurrence_button_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<uintptr_t>(AlarmRecurrence::Weekdays)));
-  lv_obj_t *weekends = UiWidgets::button(panel, "End", 72, 28);
-  lv_obj_align(weekends, LV_ALIGN_BOTTOM_LEFT, 246, -48);
+  lv_obj_t *weekends = UiWidgets::button(panel, "Weekends", 96, 28);
+  lv_obj_align(weekends, LV_ALIGN_BOTTOM_LEFT, 296, -48);
   lv_obj_add_event_cb(weekends, recurrence_button_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<uintptr_t>(AlarmRecurrence::Weekends)));
 
   switch (editing_alarm.recurrence) {
