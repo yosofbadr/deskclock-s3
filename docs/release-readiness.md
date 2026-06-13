@@ -45,7 +45,7 @@ Final verification is blocked until the board is manually placed into ESP32-S3 b
 Failed to connect to ESP32-S3: No serial data received
 ```
 
-After upload succeeds, complete [`hardware-verification.md`](hardware-verification.md), especially:
+See [`troubleshooting.md`](troubleshooting.md) for upload recovery notes. After upload succeeds, complete [`hardware-verification.md`](hardware-verification.md), especially:
 
 - BOOT short/long press logs and setup entry.
 - Alarm creation and persistence after reboot.
