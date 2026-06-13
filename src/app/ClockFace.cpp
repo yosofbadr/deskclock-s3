@@ -5,6 +5,7 @@
 #include <stdio.h>
 
 #include "AlarmService.h"
+#include "AlarmToneService.h"
 #include "BrightnessService.h"
 #include "TimeService.h"
 #include "lvgl.h"
@@ -415,6 +416,11 @@ void adjust_brightness_event(lv_event_t *event)
   refresh_brightness_setup();
 }
 
+void test_alarm_tone_event(lv_event_t *)
+{
+  DeskClock::AlarmToneService::testTone();
+}
+
 void open_brightness_event(lv_event_t *)
 {
   editing_brightness = DeskClock::BrightnessService::settings();
@@ -629,11 +635,17 @@ extern "C" void clock_face_create(void)
   lv_obj_align(day_start_up, LV_ALIGN_RIGHT_MID, -26, 42);
   lv_obj_add_event_cb(day_start_up, adjust_brightness_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<uintptr_t>(8)));
 
+  lv_obj_t *test_tone = create_button(brightness_panel, "Test tone", 86, 34);
+  lv_obj_align(test_tone, LV_ALIGN_BOTTOM_LEFT, 14, -12);
+  lv_obj_add_event_cb(test_tone, test_alarm_tone_event, LV_EVENT_CLICKED, nullptr);
+  if (!DeskClock::AlarmToneService::available()) {
+    lv_obj_add_state(test_tone, LV_STATE_DISABLED);
+  }
   lv_obj_t *save_brightness = create_button(brightness_panel, "Save", 74, 34);
-  lv_obj_align(save_brightness, LV_ALIGN_BOTTOM_MID, -44, -12);
+  lv_obj_align(save_brightness, LV_ALIGN_BOTTOM_MID, 0, -12);
   lv_obj_add_event_cb(save_brightness, save_brightness_event, LV_EVENT_CLICKED, nullptr);
   lv_obj_t *close_brightness = create_button(brightness_panel, "Close", 74, 34);
-  lv_obj_align(close_brightness, LV_ALIGN_BOTTOM_MID, 44, -12);
+  lv_obj_align(close_brightness, LV_ALIGN_BOTTOM_RIGHT, -14, -12);
   lv_obj_add_event_cb(close_brightness, close_brightness_event, LV_EVENT_CLICKED, nullptr);
 
   time_setup_panel = lv_obj_create(screen);

@@ -1,0 +1,179 @@
+#include "AlarmToneService.h"
+
+#include <Arduino.h>
+#include <math.h>
+#include <stdint.h>
+
+#include "codec_board/codec_board.h"
+#include "codec_board/codec_init.h"
+#include "esp_codec_dev/include/esp_codec_dev.h"
+#include "esp_err.h"
+#include "freertos/FreeRTOS.h"
+#include "tca9554/esp_io_expander_tca9554.h"
+
+namespace DeskClock {
+namespace {
+
+constexpr int kSampleRate = 24000;
+constexpr int kChannels = 2;
+constexpr int kBitsPerSample = 16;
+constexpr int kFramesPerChunk = 96;
+constexpr float kPi = 3.14159265358979323846F;
+constexpr uint32_t kBeepIntervalMs = 900;
+constexpr uint32_t kToneChunkMs = 90;
+
+esp_codec_dev_handle_t playback = nullptr;
+esp_io_expander_handle_t io_expander = nullptr;
+bool initialized = false;
+bool init_attempted = false;
+uint32_t active_started_ms = 0;
+uint8_t active_alarm_id = 0;
+uint32_t last_beep_ms = 0;
+float phase = 0.0F;
+
+bool enable_audio_expander()
+{
+  i2c_master_bus_handle_t bus = nullptr;
+  esp_err_t err = i2c_master_get_bus_handle(0, &bus);
+  if (err != ESP_OK || bus == nullptr) {
+    Serial.printf("AlarmToneService: failed to get I2C bus 0, err=%d\n", err);
+    return false;
+  }
+
+  err = esp_io_expander_new_i2c_tca9554(bus, ESP_IO_EXPANDER_I2C_TCA9554_ADDRESS_000, &io_expander);
+  if (err != ESP_OK) {
+    Serial.printf("AlarmToneService: failed to create TCA9554 expander, err=%d\n", err);
+    return false;
+  }
+
+  ESP_ERROR_CHECK_WITHOUT_ABORT(esp_io_expander_set_dir(io_expander, IO_EXPANDER_PIN_NUM_7, IO_EXPANDER_OUTPUT));
+  ESP_ERROR_CHECK_WITHOUT_ABORT(esp_io_expander_set_level(io_expander, IO_EXPANDER_PIN_NUM_7, 1));
+  return true;
+}
+
+bool init_audio_codecs()
+{
+  set_codec_board_type("S3_LCD_3_49");
+
+  codec_init_cfg_t codec_cfg = {
+      .in_mode = CODEC_I2S_MODE_TDM,
+      .out_mode = CODEC_I2S_MODE_TDM,
+      .in_use_tdm = false,
+      .reuse_dev = false,
+  };
+
+  int init_result = init_codec(&codec_cfg);
+  if (init_result != 0) {
+    Serial.printf("AlarmToneService: init_codec failed, result=%d\n", init_result);
+    return false;
+  }
+
+  playback = get_playback_handle();
+  if (playback == nullptr) {
+    Serial.println("AlarmToneService: missing playback handle");
+    return false;
+  }
+
+  esp_codec_dev_set_out_vol(playback, 85.0);
+
+  esp_codec_dev_sample_info_t format = {};
+  format.bits_per_sample = kBitsPerSample;
+  format.channel = kChannels;
+  format.channel_mask = 0;
+  format.sample_rate = kSampleRate;
+  format.mclk_multiple = 0;
+
+  int open_playback = esp_codec_dev_open(playback, &format);
+  Serial.printf("AlarmToneService: open playback=%d\n", open_playback);
+  return open_playback == 0;
+}
+
+void play_tone_chunk(float frequency_hz, uint32_t duration_ms)
+{
+  if (playback == nullptr) {
+    return;
+  }
+
+  int16_t buffer[kFramesPerChunk * kChannels];
+  const uint32_t total_frames = (static_cast<uint64_t>(kSampleRate) * duration_ms) / 1000ULL;
+  const float phase_step = (2.0F * kPi * frequency_hz) / static_cast<float>(kSampleRate);
+
+  uint32_t frames_written = 0;
+  while (frames_written < total_frames) {
+    const uint32_t frames_this_chunk = min<uint32_t>(kFramesPerChunk, total_frames - frames_written);
+    for (uint32_t frame = 0; frame < frames_this_chunk; ++frame) {
+      const float envelope = 0.38F;
+      const int16_t sample = static_cast<int16_t>(sinf(phase) * 32767.0F * envelope);
+      buffer[frame * 2] = sample;
+      buffer[(frame * 2) + 1] = sample;
+      phase += phase_step;
+      if (phase > 2.0F * kPi) {
+        phase -= 2.0F * kPi;
+      }
+    }
+
+    const uint32_t bytes = frames_this_chunk * kChannels * sizeof(int16_t);
+    if (esp_codec_dev_write(playback, buffer, bytes) != 0) {
+      return;
+    }
+    frames_written += frames_this_chunk;
+  }
+}
+
+} // namespace
+
+namespace AlarmToneService {
+
+void begin()
+{
+  if (init_attempted) {
+    return;
+  }
+  init_attempted = true;
+  initialized = enable_audio_expander() && init_audio_codecs();
+  Serial.printf("AlarmToneService: %s\n", initialized ? "ready" : "unavailable");
+}
+
+void loop(const ActiveAlarmAlert &alert)
+{
+  if (!initialized || !alert.active || !alert.sound_allowed) {
+    active_alarm_id = 0;
+    active_started_ms = 0;
+    return;
+  }
+
+  const uint32_t now_ms = millis();
+  if (active_alarm_id != alert.alarm.id) {
+    active_alarm_id = alert.alarm.id;
+    active_started_ms = now_ms;
+    last_beep_ms = 0;
+  }
+
+  if (now_ms - active_started_ms > static_cast<uint32_t>(kAlarmSoundLimitSeconds) * 1000UL) {
+    return;
+  }
+
+  if (last_beep_ms == 0 || now_ms - last_beep_ms >= kBeepIntervalMs) {
+    last_beep_ms = now_ms;
+    play_tone_chunk(880.0F, kToneChunkMs);
+    play_tone_chunk(1174.66F, kToneChunkMs);
+  }
+}
+
+void testTone()
+{
+  if (!initialized) {
+    return;
+  }
+  play_tone_chunk(523.25F, 140);
+  play_tone_chunk(659.25F, 140);
+  play_tone_chunk(783.99F, 180);
+}
+
+bool available()
+{
+  return initialized;
+}
+
+} // namespace AlarmToneService
+} // namespace DeskClock
