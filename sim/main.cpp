@@ -3,6 +3,7 @@
 #include "app/AlarmManagerView.h"
 #include "app/AlarmService.h"
 #include "app/AlarmToneService.h"
+#include "app/AssetService.h"
 #include "app/BrightnessService.h"
 #include "app/BrightnessSettingsView.h"
 #include "app/NetworkService.h"
@@ -39,6 +40,7 @@ struct Options {
   std::string screenshot_path;
   std::string open_view;
   std::string fixed_time;
+  int theme_index = -1;
   bool dump_layout = false;
   bool reference_scene = false;
   uint32_t run_ms = 0;
@@ -56,6 +58,8 @@ Options parse_options(int argc, char **argv)
       options.dump_layout = true;
     } else if (std::strcmp(argv[index], "--fixed-time") == 0 && index + 1 < argc) {
       options.fixed_time = argv[++index];
+    } else if (std::strcmp(argv[index], "--theme") == 0 && index + 1 < argc) {
+      options.theme_index = std::atoi(argv[++index]);
     } else if (std::strcmp(argv[index], "--reference-scene") == 0) {
       options.reference_scene = true;
       if (options.fixed_time.empty()) {
@@ -64,7 +68,7 @@ Options parse_options(int argc, char **argv)
     } else if (std::strcmp(argv[index], "--run-ms") == 0 && index + 1 < argc) {
       options.run_ms = static_cast<uint32_t>(std::strtoul(argv[++index], nullptr, 10));
     } else if (std::strcmp(argv[index], "--help") == 0) {
-      std::cout << "Usage: deskclock_sim [--screenshot out.ppm] [--open time|alarms|brightness|network] [--dump-layout] [--fixed-time YYYY-MM-DDTHH:MM:SS] [--reference-scene] [--run-ms milliseconds]\n";
+      std::cout << "Usage: deskclock_sim [--screenshot out.ppm] [--open time|alarms|brightness|network] [--dump-layout] [--fixed-time YYYY-MM-DDTHH:MM:SS] [--theme index] [--reference-scene] [--run-ms milliseconds]\n";
       std::exit(0);
     }
   }
@@ -92,13 +96,13 @@ bool parse_fixed_time(const std::string &value, time_t &epoch)
   return epoch != static_cast<time_t>(-1);
 }
 
-void seed_reference_preferences()
+void seed_reference_preferences(int theme_index)
 {
   Preferences preferences;
   if (preferences.begin("deskclock", false)) {
     preferences.putBool("configured", true);
     preferences.putBool("time24", false);
-    preferences.putUChar("theme", 0);
+    preferences.putUChar("theme", static_cast<uint8_t>(theme_index < 0 ? 0 : theme_index));
     preferences.end();
   }
 }
@@ -109,8 +113,8 @@ void initialize_app(const Options &options)
   Serial.println("DeskClock S3 simulator starting");
 
   i2c_master_Init();
-  if (options.reference_scene) {
-    seed_reference_preferences();
+  if (options.reference_scene || options.theme_index >= 0) {
+    seed_reference_preferences(options.theme_index);
   }
   if (!options.fixed_time.empty()) {
     time_t fixed_epoch = 0;
@@ -121,6 +125,7 @@ void initialize_app(const Options &options)
     }
   }
   DeskClock::SettingsService::begin();
+  DeskClock::AssetService::begin();
   DeskClock::NetworkService::begin();
   DeskClock::TimeService::begin();
   DeskClock::AlarmService::begin(DeskClock::TimeService::snapshot().now);

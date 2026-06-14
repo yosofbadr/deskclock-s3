@@ -10,6 +10,9 @@
       "-<drivers/>",
       "-<libs/>",
       "+<libs/bin_decoder/>",
+      "+<libs/fsdrv/lv_fs_stdio.c>",
+      "+<libs/lodepng/>",
+      "+<libs/tjpgd/>",
       "-<others/>"
     ]
   }

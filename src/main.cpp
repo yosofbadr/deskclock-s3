@@ -200,6 +200,7 @@ void loop()
 
 #include "app/AlarmService.h"
 #include "app/AlarmToneService.h"
+#include "app/AssetService.h"
 #include "app/BrightnessService.h"
 #include "app/NetworkService.h"
 #include "app/SettingsService.h"
@@ -269,6 +270,7 @@ void setup()
   Serial.printf("BoardPowerService: battery power hold %s\n", DeskClock::BoardPowerService::batteryPowerHoldEnabled() ? "enabled" : "unavailable");
 
   DeskClock::SettingsService::begin();
+  DeskClock::AssetService::begin();
   DeskClock::NetworkService::begin();
   DeskClock::TimeService::begin();
   DeskClock::AlarmService::begin(DeskClock::TimeService::snapshot().now);

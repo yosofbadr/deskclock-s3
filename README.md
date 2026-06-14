@@ -34,6 +34,7 @@ The firmware currently brings up a landscape LVGL desk clock with:
 - on-device time setup, Wi-Fi setup, brightness settings, and alarm management
 - persisted settings and alarms using ESP32 local storage
 - alarm audio through the board speaker when enabled
+- optional personal theme assets loaded directly from a FAT32 microSD card; see [`docs/sd-assets.md`](docs/sd-assets.md)
 
 Alarm behavior implemented so far:
 
@@ -137,6 +138,19 @@ Capture the deterministic visual-reference scene used for clock-face layout comp
 ```sh
 .pio/sim-build/deskclock_sim --reference-scene --screenshot .pio/deskclock-reference-scene.ppm
 sips -s format png .pio/deskclock-reference-scene.ppm --out .pio/deskclock-reference-scene.png
+```
+
+Preview a specific built-in theme by index:
+
+```sh
+.pio/sim-build/deskclock_sim --reference-scene --theme 2 --screenshot .pio/deskclock-theme-2.ppm
+```
+
+Preview SD-card theme assets in the simulator by preparing `.pio/sdcard` first:
+
+```sh
+python3 scripts/prepare_sd_assets.py
+.pio/sim-build/deskclock_sim --reference-scene --theme 2 --screenshot .pio/deskclock-theme-2.ppm
 ```
 
 Or pin any RTC time in the simulator:

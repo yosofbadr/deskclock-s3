@@ -17,6 +17,11 @@ list(FILTER LVGL_SOURCES EXCLUDE REGEX "/src/drivers/(display|evdev|glfw|libinpu
 list(FILTER LVGL_SOURCES EXCLUDE REGEX "/src/draw/(dma2d|nema_gfx|nxp|opengles|renesas|sdl|vg_lite)/")
 list(APPEND LVGL_SOURCES
   "${REPO_ROOT}/lib/lvgl/src/libs/bin_decoder/lv_bin_decoder.c"
+  "${REPO_ROOT}/lib/lvgl/src/libs/fsdrv/lv_fs_stdio.c"
+  "${REPO_ROOT}/lib/lvgl/src/libs/lodepng/lodepng.c"
+  "${REPO_ROOT}/lib/lvgl/src/libs/lodepng/lv_lodepng.c"
+  "${REPO_ROOT}/lib/lvgl/src/libs/tjpgd/lv_tjpgd.c"
+  "${REPO_ROOT}/lib/lvgl/src/libs/tjpgd/tjpgd.c"
   "${REPO_ROOT}/lib/lvgl/src/others/snapshot/lv_snapshot.c"
 )
 

@@ -34,6 +34,14 @@
 #define LV_SDL_DIRECT_EXIT 1
 #define LV_SDL_MOUSEWHEEL_MODE LV_SDL_MOUSEWHEEL_MODE_ENCODER
 
+#define LV_USE_FS_STDIO 1
+#define LV_FS_STDIO_LETTER 'S'
+#define LV_FS_STDIO_PATH ".pio/sdcard"
+#define LV_FS_STDIO_CACHE_SIZE 4096
+
+#define LV_USE_LODEPNG 1
+#define LV_USE_TJPGD 1
+
 #define LV_USE_SNAPSHOT 1
 
 #endif /* LV_CONF_H */
