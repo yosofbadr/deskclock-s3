@@ -5,7 +5,10 @@
 
 #include "AlarmToneService.h"
 #include "BrightnessService.h"
+#include "SettingsService.h"
 #include "UiWidgets.h"
+
+extern "C" void clock_face_refresh_theme(void);
 
 namespace DeskClock {
 namespace {
@@ -23,7 +26,9 @@ void refresh()
   char buffer[96];
   snprintf(buffer,
            sizeof(buffer),
-           "Day %u  Night %u | N %02u:00 D %02u:00 | Audio %s Vol %u",
+           "Theme %u/%u | Day %u Night %u | N%02u D%02u | Audio %s Vol %u",
+           static_cast<unsigned int>(SettingsService::snapshot().theme_index + 1U),
+           static_cast<unsigned int>(SettingsService::themeCount()),
            editing_brightness.day_brightness,
            editing_brightness.night_brightness,
            editing_brightness.night_start_hour,
@@ -70,6 +75,9 @@ void adjust_event(lv_event_t *event)
     editing_tone.volume = static_cast<uint8_t>(next < 5 ? 5 : (next > 100 ? 100 : next));
   } else if (action == 11) {
     editing_tone.enabled = !editing_tone.enabled;
+  } else if (action == 12) {
+    SettingsService::cycleTheme();
+    clock_face_refresh_theme();
   }
   refresh();
 }
@@ -115,9 +123,9 @@ void create(lv_obj_t *parent, int32_t width, int32_t height, const lv_font_t *fo
       {"Day-", 1, 14, 38, 62, 30},   {"Day+", 2, 82, 38, 62, 30},
       {"Night-", 3, 168, 38, 70, 30}, {"Night+", 4, 244, 38, 70, 30},
       {"Vol-", 9, 442, 38, 54, 30},   {"Vol+", 10, 502, 38, 54, 30},
-      {"Audio", 11, 14, 74, 64, 30},  {"N-", 5, 168, 74, 44, 30},
-      {"N+", 6, 218, 74, 44, 30},     {"D-", 7, 268, 74, 44, 30},
-      {"D+", 8, 318, 74, 44, 30},
+      {"Audio", 11, 14, 74, 64, 30},  {"Theme", 12, 84, 74, 74, 30},
+      {"N-", 5, 168, 74, 44, 30},      {"N+", 6, 218, 74, 44, 30},
+      {"D-", 7, 268, 74, 44, 30},      {"D+", 8, 318, 74, 44, 30},
   };
 
   for (const ButtonSpec &spec : specs) {
