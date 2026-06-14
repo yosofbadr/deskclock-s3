@@ -23,7 +23,7 @@ void refresh()
   char buffer[96];
   snprintf(buffer,
            sizeof(buffer),
-           "Day %u  Night %u\nNight starts %02u:00  Day starts %02u:00\nAudio %s  Vol %u",
+           "Day %u  Night %u | N %02u:00 D %02u:00 | Audio %s Vol %u",
            editing_brightness.day_brightness,
            editing_brightness.night_brightness,
            editing_brightness.night_start_hour,
@@ -92,35 +92,48 @@ void create(lv_obj_t *parent, int32_t width, int32_t height, const lv_font_t *fo
   lv_obj_set_style_text_font(title, font, 0);
   UiWidgets::setTextColor(title, 0x1F2933);
   lv_label_set_text(title, "Brightness");
-  lv_obj_align(title, LV_ALIGN_TOP_LEFT, 14, 10);
+  lv_obj_align(title, LV_ALIGN_TOP_LEFT, 14, 8);
 
   value_label = lv_label_create(panel);
   lv_obj_set_style_text_font(value_label, font, 0);
   lv_obj_set_style_text_align(value_label, LV_TEXT_ALIGN_CENTER, 0);
+  lv_obj_set_width(value_label, width - 185);
   UiWidgets::setTextColor(value_label, 0x1F2933);
   lv_label_set_text(value_label, "Brightness");
-  lv_obj_align(value_label, LV_ALIGN_CENTER, 0, -38);
+  lv_obj_align(value_label, LV_ALIGN_TOP_MID, 42, 8);
 
-  const char *labels[] = {"Day-", "Day+", "Night-", "Night+", "N-", "N+", "D-", "D+", "Vol-", "Vol+", "Audio"};
-  const int widths[] = {62, 62, 70, 70, 44, 44, 44, 44, 54, 54, 64};
-  lv_align_t aligns[] = {LV_ALIGN_LEFT_MID, LV_ALIGN_LEFT_MID, LV_ALIGN_RIGHT_MID, LV_ALIGN_RIGHT_MID, LV_ALIGN_BOTTOM_MID, LV_ALIGN_BOTTOM_MID, LV_ALIGN_BOTTOM_MID, LV_ALIGN_BOTTOM_MID, LV_ALIGN_TOP_RIGHT, LV_ALIGN_TOP_RIGHT, LV_ALIGN_BOTTOM_LEFT};
-  const int xs[] = {14, 84, -92, -14, -98, -48, 12, 62, -74, -14, 14};
-  const int ys[] = {-24, -24, -24, -24, -58, -58, -58, -58, 12, 12, -12};
-  const int heights[] = {32, 32, 32, 32, 30, 30, 30, 30, 30, 30, 34};
-  for (uint8_t i = 0; i < 11; ++i) {
-    lv_obj_t *button = UiWidgets::button(panel, labels[i], widths[i], heights[i]);
-    lv_obj_align(button, aligns[i], xs[i], ys[i]);
-    lv_obj_add_event_cb(button, adjust_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<uintptr_t>(i + 1)));
+  struct ButtonSpec {
+    const char *label;
+    uint8_t action;
+    int16_t x;
+    int16_t y;
+    int16_t w;
+    int16_t h;
+  };
+
+  const ButtonSpec specs[] = {
+      {"Day-", 1, 14, 38, 62, 30},   {"Day+", 2, 82, 38, 62, 30},
+      {"Night-", 3, 168, 38, 70, 30}, {"Night+", 4, 244, 38, 70, 30},
+      {"Vol-", 9, 442, 38, 54, 30},   {"Vol+", 10, 502, 38, 54, 30},
+      {"Audio", 11, 14, 74, 64, 30},  {"N-", 5, 168, 74, 44, 30},
+      {"N+", 6, 218, 74, 44, 30},     {"D-", 7, 268, 74, 44, 30},
+      {"D+", 8, 318, 74, 44, 30},
+  };
+
+  for (const ButtonSpec &spec : specs) {
+    lv_obj_t *button = UiWidgets::button(panel, spec.label, spec.w, spec.h);
+    lv_obj_align(button, LV_ALIGN_TOP_LEFT, spec.x, spec.y);
+    lv_obj_add_event_cb(button, adjust_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<uintptr_t>(spec.action)));
   }
 
-  lv_obj_t *test_tone = UiWidgets::button(panel, "Test", 58, 34);
-  lv_obj_align(test_tone, LV_ALIGN_BOTTOM_MID, -56, -12);
+  lv_obj_t *test_tone = UiWidgets::button(panel, "Test", 58, 30);
+  lv_obj_align(test_tone, LV_ALIGN_BOTTOM_MID, -78, -2);
   lv_obj_add_event_cb(test_tone, test_tone_event, LV_EVENT_CLICKED, nullptr);
-  lv_obj_t *save = UiWidgets::button(panel, "Save", 74, 34);
-  lv_obj_align(save, LV_ALIGN_BOTTOM_MID, 24, -12);
+  lv_obj_t *save = UiWidgets::button(panel, "Save", 74, 30);
+  lv_obj_align(save, LV_ALIGN_BOTTOM_MID, 0, -2);
   lv_obj_add_event_cb(save, save_event, LV_EVENT_CLICKED, nullptr);
-  lv_obj_t *close = UiWidgets::button(panel, "Close", 74, 34);
-  lv_obj_align(close, LV_ALIGN_BOTTOM_RIGHT, -14, -12);
+  lv_obj_t *close = UiWidgets::button(panel, "Close", 74, 30);
+  lv_obj_align(close, LV_ALIGN_BOTTOM_RIGHT, -14, -2);
   lv_obj_add_event_cb(close, close_event, LV_EVENT_CLICKED, nullptr);
 }
 

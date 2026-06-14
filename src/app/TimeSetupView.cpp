@@ -38,7 +38,7 @@ void refresh()
   char buffer[96];
   snprintf(buffer,
            sizeof(buffer),
-           "%04u-%02u-%02u\n%s  Format: %s\nTZ: %s",
+           "%04u-%02u-%02u  %s  %s  TZ %s",
            editing_time.year,
            editing_time.month,
            editing_time.day,
@@ -231,66 +231,72 @@ void create(lv_obj_t *parent, int32_t width, int32_t height, const lv_font_t *fo
   lv_obj_set_style_text_font(title, font, 0);
   UiWidgets::setTextColor(title, 0x1F2933);
   lv_label_set_text(title, "Time setup");
-  lv_obj_align(title, LV_ALIGN_TOP_LEFT, 14, 10);
+  lv_obj_align(title, LV_ALIGN_TOP_LEFT, 14, 8);
 
   value_label = lv_label_create(panel);
   lv_obj_set_style_text_font(value_label, font, 0);
   lv_obj_set_style_text_align(value_label, LV_TEXT_ALIGN_CENTER, 0);
+  lv_obj_set_width(value_label, width - 190);
   UiWidgets::setTextColor(value_label, 0x1F2933);
   lv_label_set_text(value_label, "---- -- --");
-  lv_obj_align(value_label, LV_ALIGN_CENTER, 0, -36);
+  lv_obj_align(value_label, LV_ALIGN_TOP_MID, 30, 8);
 
   date_hint_label = lv_label_create(panel);
   UiWidgets::setTextColor(date_hint_label, 0x52616F);
-  lv_label_set_text(date_hint_label, "Y/M/D adjust date");
-  lv_obj_align(date_hint_label, LV_ALIGN_TOP_MID, 0, 82);
+  lv_label_set_text(date_hint_label, "Date");
+  lv_obj_align(date_hint_label, LV_ALIGN_TOP_LEFT, 14, 42);
 
-  lv_obj_t *minus_hour = UiWidgets::button(panel, "-1h", 58, 36);
-  lv_obj_align(minus_hour, LV_ALIGN_LEFT_MID, 20, 18);
-  lv_obj_add_event_cb(minus_hour, adjust_time_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(-60)));
-  lv_obj_t *minus_minute = UiWidgets::button(panel, "-1m", 58, 36);
-  lv_obj_align(minus_minute, LV_ALIGN_LEFT_MID, 88, 18);
-  lv_obj_add_event_cb(minus_minute, adjust_time_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(-1)));
-  lv_obj_t *plus_minute = UiWidgets::button(panel, "+1m", 58, 36);
-  lv_obj_align(plus_minute, LV_ALIGN_RIGHT_MID, -88, 18);
-  lv_obj_add_event_cb(plus_minute, adjust_time_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(1)));
-  lv_obj_t *plus_hour = UiWidgets::button(panel, "+1h", 58, 36);
-  lv_obj_align(plus_hour, LV_ALIGN_RIGHT_MID, -20, 18);
-  lv_obj_add_event_cb(plus_hour, adjust_time_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(60)));
-
-  lv_obj_t *year_down = UiWidgets::button(panel, "Y-", 40, 30);
-  lv_obj_align(year_down, LV_ALIGN_TOP_MID, -132, 48);
+  lv_obj_t *year_down = UiWidgets::button(panel, "Y-", 42, 26);
+  lv_obj_align(year_down, LV_ALIGN_TOP_MID, -140, 36);
   lv_obj_add_event_cb(year_down, adjust_year_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(-1)));
-  lv_obj_t *month_down = UiWidgets::button(panel, "M-", 40, 30);
-  lv_obj_align(month_down, LV_ALIGN_TOP_MID, -84, 48);
+  lv_obj_t *month_down = UiWidgets::button(panel, "M-", 42, 26);
+  lv_obj_align(month_down, LV_ALIGN_TOP_MID, -92, 36);
   lv_obj_add_event_cb(month_down, adjust_month_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(-1)));
-  lv_obj_t *date_down = UiWidgets::button(panel, "D-", 40, 30);
-  lv_obj_align(date_down, LV_ALIGN_TOP_MID, -36, 48);
+  lv_obj_t *date_down = UiWidgets::button(panel, "D-", 42, 26);
+  lv_obj_align(date_down, LV_ALIGN_TOP_MID, -44, 36);
   lv_obj_add_event_cb(date_down, adjust_date_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(-1)));
-  lv_obj_t *date_up = UiWidgets::button(panel, "D+", 40, 30);
-  lv_obj_align(date_up, LV_ALIGN_TOP_MID, 36, 48);
+  lv_obj_t *date_up = UiWidgets::button(panel, "D+", 42, 26);
+  lv_obj_align(date_up, LV_ALIGN_TOP_MID, 44, 36);
   lv_obj_add_event_cb(date_up, adjust_date_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(1)));
-  lv_obj_t *month_up = UiWidgets::button(panel, "M+", 40, 30);
-  lv_obj_align(month_up, LV_ALIGN_TOP_MID, 84, 48);
+  lv_obj_t *month_up = UiWidgets::button(panel, "M+", 42, 26);
+  lv_obj_align(month_up, LV_ALIGN_TOP_MID, 92, 36);
   lv_obj_add_event_cb(month_up, adjust_month_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(1)));
-  lv_obj_t *year_up = UiWidgets::button(panel, "Y+", 40, 30);
-  lv_obj_align(year_up, LV_ALIGN_TOP_MID, 132, 48);
+  lv_obj_t *year_up = UiWidgets::button(panel, "Y+", 42, 26);
+  lv_obj_align(year_up, LV_ALIGN_TOP_MID, 140, 36);
   lv_obj_add_event_cb(year_up, adjust_year_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(1)));
 
-  lv_obj_t *format_button = UiWidgets::button(panel, "12/24h", 76, 34);
-  lv_obj_align(format_button, LV_ALIGN_BOTTOM_LEFT, 14, -12);
+  lv_obj_t *time_hint = lv_label_create(panel);
+  UiWidgets::setTextColor(time_hint, 0x52616F);
+  lv_label_set_text(time_hint, "Time");
+  lv_obj_align(time_hint, LV_ALIGN_TOP_LEFT, 14, 76);
+
+  lv_obj_t *minus_hour = UiWidgets::button(panel, "-1h", 58, 28);
+  lv_obj_align(minus_hour, LV_ALIGN_TOP_MID, -132, 70);
+  lv_obj_add_event_cb(minus_hour, adjust_time_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(-60)));
+  lv_obj_t *minus_minute = UiWidgets::button(panel, "-1m", 58, 28);
+  lv_obj_align(minus_minute, LV_ALIGN_TOP_MID, -68, 70);
+  lv_obj_add_event_cb(minus_minute, adjust_time_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(-1)));
+  lv_obj_t *plus_minute = UiWidgets::button(panel, "+1m", 58, 28);
+  lv_obj_align(plus_minute, LV_ALIGN_TOP_MID, 68, 70);
+  lv_obj_add_event_cb(plus_minute, adjust_time_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(1)));
+  lv_obj_t *plus_hour = UiWidgets::button(panel, "+1h", 58, 28);
+  lv_obj_align(plus_hour, LV_ALIGN_TOP_MID, 132, 70);
+  lv_obj_add_event_cb(plus_hour, adjust_time_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(60)));
+
+  lv_obj_t *format_button = UiWidgets::button(panel, "12/24h", 76, 30);
+  lv_obj_align(format_button, LV_ALIGN_BOTTOM_LEFT, 14, -2);
   lv_obj_add_event_cb(format_button, toggle_format_event, LV_EVENT_CLICKED, nullptr);
-  lv_obj_t *timezone_button = UiWidgets::button(panel, "TZ", 46, 34);
-  lv_obj_align(timezone_button, LV_ALIGN_BOTTOM_LEFT, 88, -12);
+  lv_obj_t *timezone_button = UiWidgets::button(panel, "TZ", 46, 30);
+  lv_obj_align(timezone_button, LV_ALIGN_BOTTOM_LEFT, 96, -2);
   lv_obj_add_event_cb(timezone_button, cycle_timezone_event, LV_EVENT_CLICKED, nullptr);
-  lv_obj_t *wifi_button = UiWidgets::button(panel, "Wi-Fi", 58, 34);
-  lv_obj_align(wifi_button, LV_ALIGN_BOTTOM_LEFT, 140, -12);
+  lv_obj_t *wifi_button = UiWidgets::button(panel, "Wi-Fi", 58, 30);
+  lv_obj_align(wifi_button, LV_ALIGN_BOTTOM_LEFT, 148, -2);
   lv_obj_add_event_cb(wifi_button, [](lv_event_t *) { NetworkSetupView::open(); }, LV_EVENT_CLICKED, nullptr);
-  lv_obj_t *save_button = UiWidgets::button(panel, "Set time", 92, 34);
-  lv_obj_align(save_button, LV_ALIGN_BOTTOM_MID, 38, -12);
+  lv_obj_t *save_button = UiWidgets::button(panel, "Set time", 92, 30);
+  lv_obj_align(save_button, LV_ALIGN_BOTTOM_MID, 36, -2);
   lv_obj_add_event_cb(save_button, save_event, LV_EVENT_CLICKED, nullptr);
-  lv_obj_t *close_button = UiWidgets::button(panel, "Close", 74, 34);
-  lv_obj_align(close_button, LV_ALIGN_BOTTOM_RIGHT, -14, -12);
+  lv_obj_t *close_button = UiWidgets::button(panel, "Close", 74, 30);
+  lv_obj_align(close_button, LV_ALIGN_BOTTOM_RIGHT, -14, -2);
   lv_obj_add_event_cb(close_button, close_event, LV_EVENT_CLICKED, nullptr);
 }
 

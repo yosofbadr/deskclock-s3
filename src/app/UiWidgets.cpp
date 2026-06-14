@@ -23,6 +23,9 @@ lv_obj_t *modalPanel(lv_obj_t *parent, int32_t width, int32_t height)
   lv_obj_set_style_bg_opa(panel, LV_OPA_COVER, 0);
   lv_obj_set_style_border_color(panel, lv_color_hex(0xCBD5E1), 0);
   lv_obj_set_style_border_width(panel, 2, 0);
+  lv_obj_set_style_pad_all(panel, 0, 0);
+  lv_obj_set_style_pad_row(panel, 0, 0);
+  lv_obj_set_style_pad_column(panel, 0, 0);
   lv_obj_clear_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
   lv_obj_add_flag(panel, LV_OBJ_FLAG_HIDDEN);
   return panel;
