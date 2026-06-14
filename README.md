@@ -27,8 +27,8 @@ Optional connected features should be framed as opt-in extensions:
 
 The firmware currently brings up a landscape LVGL desk clock with:
 
-- neutral theme/settings placeholder on the left
-- large RTC-backed time display on the right
+- themeable landscape clock face with date, mini calendar, status, next-alarm, and settings cards
+- large RTC-backed time display in the center
 - date line and sync status dot
 - next-alarm indicator on the clock face
 - on-device time setup, Wi-Fi setup, brightness settings, and alarm management
@@ -52,7 +52,7 @@ Alarm behavior implemented so far:
 
 ## Standalone/battery power
 
-The Waveshare board uses an internal battery power-hold circuit controlled through the TCA9554 I/O expander. DeskClock S3 now enables the board `SYS_EN` hold pin early during boot, matching the behavior used by the RSVP Nano firmware, so the device should remain powered after USB is removed or after the user releases the board power button.
+The Waveshare board uses an internal battery power-hold circuit controlled through the TCA9554 I/O expander. DeskClock S3 enables the board `SYS_EN` hold pin early during boot, matching the behavior used by the RSVP Nano firmware, so the device should remain powered after USB is removed or after the user releases the board power button. Audio enable also goes through the same `BoardPowerService` expander path so speaker setup cannot reset the shared power-hold pin.
 
 If the board is fully off and not connected to USB, hold/press the board **PWR** button to start it. The firmware must boot far enough to enable `SYS_EN`; if it does not stay on, reconnect USB, flash the latest firmware, then test again with a charged battery.
 

@@ -12,6 +12,7 @@ The firmware has the core v1 clock/alarm behavior implemented and build-verified
 - Local alarm storage with up to five saved alarms.
 - Once, Daily, Weekdays, and Weekends recurrence.
 - Alarm create/edit/delete UI with hour/minute rollers and delete confirmation.
+- Themeable landscape clock face with date, mini calendar, status, settings, and next-alarm cards.
 - Main clock next-alarm indicator.
 - Full-screen visual alarm alert.
 - Speaker alarm tone with global volume and settings test sound.
@@ -22,13 +23,14 @@ The firmware has the core v1 clock/alarm behavior implemented and build-verified
 - Dismissed alarms do not immediately re-trigger in the same minute.
 - Snooze does not consume one of the five saved alarm slots.
 - Snoozed occurrences are included in next-alarm calculations.
+- Shared TCA9554 power/audio control keeps `SYS_EN` asserted after audio setup.
 
 ## Verified in software/builds
 
 - `pio run -e waveshare_touch_lcd_3_49` passes.
 - `pio run -e audio_test` passes.
 - Firmware version `0.1.0-dev` is included in normal and audio-test serial boot logs.
-- README documents normal/audio build commands, manual bootloader recovery, and on-device verification steps.
+- README documents normal/audio build commands, manual bootloader recovery, standalone battery startup, and on-device verification steps.
 
 ## Previously verified on hardware
 
@@ -47,6 +49,7 @@ Failed to connect to ESP32-S3: No serial data received
 
 See [`troubleshooting.md`](troubleshooting.md) for upload recovery notes. After upload succeeds, complete [`hardware-verification.md`](hardware-verification.md), especially:
 
+- Standalone battery boot via PWR, including staying on after PWR release.
 - BOOT short/long press logs and setup entry.
 - Alarm creation and persistence after reboot.
 - Visual/audio alarm firing.

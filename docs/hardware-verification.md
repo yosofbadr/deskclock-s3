@@ -21,6 +21,13 @@ Use this checklist after flashing the normal `waveshare_touch_lcd_3_49` firmware
 - [ ] Display backlight turns on.
 - [ ] Clock face is visible in landscape orientation.
 
+## Standalone/battery power
+
+- [ ] Battery is charged enough for a standalone boot.
+- [ ] With USB disconnected and the board fully off, hold **PWR** until the clock face appears.
+- [ ] Release **PWR** and confirm the device remains on for at least 60 seconds.
+- [ ] If tested while serial is connected, boot log includes `BoardPowerService: battery power hold enabled` and `BoardPowerService: audio power enabled`.
+
 ## BOOT button behavior
 
 - [ ] Short-press BOOT logs `BOOT: pressed`.
