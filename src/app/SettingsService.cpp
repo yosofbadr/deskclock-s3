@@ -11,8 +11,20 @@ constexpr const char *kPreferencesNamespace = "deskclock";
 constexpr const char *kConfiguredKey = "configured";
 constexpr const char *kTimezoneKey = "tz";
 constexpr const char *kThemeKey = "theme";
-constexpr const char *kTimezoneLabels[] = {"Local", "UTC", "Manual"};
-constexpr uint8_t kTimezoneCount = sizeof(kTimezoneLabels) / sizeof(kTimezoneLabels[0]);
+struct TimezoneOption {
+  const char *label;
+  const char *posix;
+};
+
+constexpr TimezoneOption kTimezones[] = {
+    {"Local", "CET-1CEST,M3.5.0/2,M10.5.0/3"},
+    {"UTC", "UTC0"},
+    {"London", "GMT0BST,M3.5.0/1,M10.5.0/2"},
+    {"Dubai", "GST-4"},
+    {"New York", "EST5EDT,M3.2.0/2,M11.1.0/2"},
+    {"Los Angeles", "PST8PDT,M3.2.0/2,M11.1.0/2"},
+};
+constexpr uint8_t kTimezoneCount = sizeof(kTimezones) / sizeof(kTimezones[0]);
 constexpr uint8_t kThemeCount = 3;
 
 bool configured = false;
@@ -57,7 +69,9 @@ SettingsSnapshot snapshot()
 {
   SettingsSnapshot result;
   result.configured = configured;
-  result.timezone_label = kTimezoneLabels[timezone_index % kTimezoneCount];
+  result.timezone_index = timezone_index % kTimezoneCount;
+  result.timezone_label = kTimezones[result.timezone_index].label;
+  result.timezone_posix = kTimezones[result.timezone_index].posix;
   result.theme_index = theme_index % kThemeCount;
   return result;
 }
@@ -72,6 +86,27 @@ void cycleTimezone()
 {
   timezone_index = static_cast<uint8_t>((timezone_index + 1U) % kTimezoneCount);
   save();
+}
+
+void setTimezoneIndex(uint8_t index)
+{
+  timezone_index = static_cast<uint8_t>(index % kTimezoneCount);
+  save();
+}
+
+uint8_t timezoneCount()
+{
+  return kTimezoneCount;
+}
+
+const char *timezoneLabel(uint8_t index)
+{
+  return kTimezones[index % kTimezoneCount].label;
+}
+
+const char *timezonePosix(uint8_t index)
+{
+  return kTimezones[index % kTimezoneCount].posix;
 }
 
 void cycleTheme()

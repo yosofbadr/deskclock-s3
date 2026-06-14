@@ -13,12 +13,16 @@ namespace {
 
 constexpr uint8_t kPcf85063Ctrl1Reg = 0x00;
 constexpr uint8_t kPcf85063SecondReg = 0x04;
+constexpr uint8_t kPcf85063Ctrl1StopBit = 0x20;
+constexpr uint8_t kPcf85063Ctrl1Mode12HourBit = 0x02;
 constexpr uint16_t kMinimumPlausibleYear = 2024;
 constexpr uint32_t kRtcPollIntervalMs = 1000;
+constexpr uint32_t kRecentNetworkSyncMs = 6UL * 60UL * 60UL * 1000UL;
 
 portMUX_TYPE snapshot_mux = portMUX_INITIALIZER_UNLOCKED;
 TimeSnapshot current_snapshot;
 uint32_t last_rtc_poll_ms = 0;
+uint32_t last_network_sync_ms = 0;
 
 uint8_t dec_to_bcd(uint8_t value)
 {
@@ -151,13 +155,15 @@ bool write_rtc(const DateTime &dt)
   return i2c_write_buff(rtc_dev_handle, kPcf85063SecondReg, buffer, sizeof(buffer)) == 0;
 }
 
-void force_24_hour_mode()
+void configure_rtc_control()
 {
   uint8_t ctrl1 = 0;
   if (i2c_read_buff(rtc_dev_handle, kPcf85063Ctrl1Reg, &ctrl1, 1) != 0) {
     return;
   }
-  ctrl1 &= static_cast<uint8_t>(~0x02U);
+  // Keep the PCF85063 ticking in 24-hour mode. If STOP was set by a demo,
+  // battery event, or previous firmware, the RTC returns a plausible but frozen time.
+  ctrl1 &= static_cast<uint8_t>(~(kPcf85063Ctrl1StopBit | kPcf85063Ctrl1Mode12HourBit));
   (void)i2c_write_buff(rtc_dev_handle, kPcf85063Ctrl1Reg, &ctrl1, 1);
 }
 
@@ -178,7 +184,11 @@ TimeSnapshot read_snapshot_from_rtc(bool bootstrapped)
   snapshot.rtc_available = true;
   snapshot.now = rtc_time;
   snapshot.now.valid = integrity && is_plausible(rtc_time);
-  snapshot.sync_state = snapshot.now.valid ? SyncState::LocalRetained : SyncState::Unreliable;
+  if (snapshot.now.valid && last_network_sync_ms != 0 && millis() - last_network_sync_ms < kRecentNetworkSyncMs) {
+    snapshot.sync_state = SyncState::SyncedRecently;
+  } else {
+    snapshot.sync_state = snapshot.now.valid ? SyncState::LocalRetained : SyncState::Unreliable;
+  }
   return snapshot;
 }
 
@@ -188,7 +198,7 @@ namespace TimeService {
 
 bool begin()
 {
-  force_24_hour_mode();
+  configure_rtc_control();
 
   TimeSnapshot initial = read_snapshot_from_rtc(false);
   if (initial.rtc_available && initial.now.valid) {
@@ -251,6 +261,7 @@ bool setManualTime(const DateTime &date_time)
     return false;
   }
 
+  last_network_sync_ms = 0;
   TimeSnapshot manual;
   manual.now = adjusted;
   manual.sync_state = SyncState::LocalRetained;
@@ -259,6 +270,33 @@ bool setManualTime(const DateTime &date_time)
   store_snapshot(manual);
   Serial.printf(
       "RTC: manually set to %04u-%02u-%02u %02u:%02u:%02u\n",
+      adjusted.year,
+      adjusted.month,
+      adjusted.day,
+      adjusted.hour,
+      adjusted.minute,
+      adjusted.second);
+  return true;
+}
+
+bool setNetworkTime(const DateTime &date_time)
+{
+  DateTime adjusted = date_time;
+  adjusted.week = day_of_week(adjusted.year, adjusted.month, adjusted.day);
+  adjusted.valid = true;
+  if (!is_plausible(adjusted) || !write_rtc(adjusted)) {
+    return false;
+  }
+
+  last_network_sync_ms = millis();
+  TimeSnapshot synced;
+  synced.now = adjusted;
+  synced.sync_state = SyncState::SyncedRecently;
+  synced.rtc_available = true;
+  synced.bootstrapped_from_compile_time = false;
+  store_snapshot(synced);
+  Serial.printf(
+      "RTC: network synced to %04u-%02u-%02u %02u:%02u:%02u\n",
       adjusted.year,
       adjusted.month,
       adjusted.day,

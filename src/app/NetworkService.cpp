@@ -5,6 +5,7 @@
 #include <esp_wifi.h>
 #include <time.h>
 
+#include "SettingsService.h"
 #include "TimeService.h"
 
 namespace DeskClock {
@@ -28,6 +29,7 @@ char scanned_ssids[kMaxScannedNetworks][kSsidBufferLength] = {};
 int scanned_count = 0;
 bool ntp_started = false;
 bool ntp_synced = false;
+uint8_t ntp_timezone_index = 255;
 uint32_t last_ntp_check_ms = 0;
 uint32_t last_connect_attempt_ms = 0;
 
@@ -130,11 +132,18 @@ void loop()
     return;
   }
 
+  SettingsSnapshot settings = SettingsService::snapshot();
+  if (ntp_timezone_index != settings.timezone_index) {
+    ntp_started = false;
+    ntp_synced = false;
+  }
+
   if (!ntp_started) {
-    configTzTime("UTC0", "pool.ntp.org", "time.nist.gov");
+    configTzTime(settings.timezone_posix, "pool.ntp.org", "time.nist.gov");
     ntp_started = true;
+    ntp_timezone_index = settings.timezone_index;
     last_ntp_check_ms = 0;
-    Serial.println("NetworkService: started NTP sync");
+    Serial.printf("NetworkService: started NTP sync for %s\n", settings.timezone_label);
   }
 
   const uint32_t now_ms = millis();
@@ -149,7 +158,7 @@ void loop()
   }
 
   struct tm timeinfo = {};
-  gmtime_r(&epoch, &timeinfo);
+  localtime_r(&epoch, &timeinfo);
   DateTime synced;
   synced.year = static_cast<uint16_t>(timeinfo.tm_year + 1900);
   synced.month = static_cast<uint8_t>(timeinfo.tm_mon + 1);
@@ -158,9 +167,9 @@ void loop()
   synced.minute = static_cast<uint8_t>(timeinfo.tm_min);
   synced.second = static_cast<uint8_t>(timeinfo.tm_sec);
   synced.valid = true;
-  if (TimeService::setManualTime(synced)) {
+  if (TimeService::setNetworkTime(synced)) {
     ntp_synced = true;
-    Serial.println("NetworkService: RTC updated from NTP");
+    Serial.printf("NetworkService: RTC updated from NTP (%s)\n", settings.timezone_label);
   }
 }
 
