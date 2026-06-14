@@ -21,7 +21,9 @@ namespace DeskClock {
 namespace {
 
 constexpr uint8_t kMenuItemCount = 9;
-constexpr uint8_t kVisibleRows = 7;
+constexpr uint8_t kVisibleRows = 5;
+constexpr int32_t kRowHeight = 26;
+constexpr int32_t kRowsTop = 38;
 
 lv_obj_t *panel = nullptr;
 lv_obj_t *title_label = nullptr;
@@ -123,10 +125,10 @@ void set_row_text(uint8_t slot, uint8_t item_index, bool selected)
   snprintf(line, sizeof(line), "%s %.96s", selected ? ">" : " ", item);
   lv_label_set_text(rows[slot], line);
   lv_obj_set_style_text_color(rows[slot], lv_color_hex(selected ? 0xFFFFFF : 0xCBD5E1), 0);
-  lv_obj_set_style_bg_color(rows[slot], lv_color_hex(selected ? 0x334155 : 0x111827), 0);
-  lv_obj_set_style_bg_opa(rows[slot], selected ? LV_OPA_90 : LV_OPA_TRANSP, 0);
-  lv_obj_set_style_radius(rows[slot], 4, 0);
-  lv_obj_set_style_pad_left(rows[slot], 4, 0);
+  lv_obj_set_style_bg_color(rows[slot], lv_color_hex(selected ? 0x334155 : 0x020617), 0);
+  lv_obj_set_style_bg_opa(rows[slot], selected ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
+  lv_obj_set_style_radius(rows[slot], 2, 0);
+  lv_obj_set_style_pad_left(rows[slot], 8, 0);
 }
 
 void refresh()
@@ -181,37 +183,27 @@ namespace SystemMenuView {
 
 void create(lv_obj_t *parent, int32_t width, int32_t height, const lv_font_t *font)
 {
-  menu_font = font;
-  panel = lv_obj_create(parent);
-  lv_obj_set_size(panel, width - 36, height - 20);
-  lv_obj_center(panel);
-  lv_obj_set_style_radius(panel, 12, 0);
-  lv_obj_set_style_bg_color(panel, lv_color_hex(0x111827), 0);
-  lv_obj_set_style_bg_opa(panel, LV_OPA_COVER, 0);
-  lv_obj_set_style_border_color(panel, lv_color_hex(0x64748B), 0);
-  lv_obj_set_style_border_width(panel, 1, 0);
-  lv_obj_set_style_pad_all(panel, 0, 0);
-  lv_obj_clear_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
-  lv_obj_add_flag(panel, LV_OBJ_FLAG_HIDDEN);
+  menu_font = font != nullptr ? font : LV_FONT_DEFAULT;
+  panel = UiWidgets::fullScreenPanel(parent, width, height);
   GestureTextMenu::attach(panel, &touch_state, handle_menu_input, nullptr);
 
   title_label = lv_label_create(panel);
   lv_obj_set_style_text_font(title_label, menu_font, 0);
   lv_obj_set_style_text_color(title_label, lv_color_hex(0xFFFFFF), 0);
-  lv_label_set_text(title_label, "DeskClock settings");
-  lv_obj_align(title_label, LV_ALIGN_TOP_LEFT, 10, 6);
+  lv_label_set_text(title_label, "Settings");
+  lv_obj_align(title_label, LV_ALIGN_TOP_LEFT, 22, 8);
 
   hint_label = lv_label_create(panel);
   lv_obj_set_style_text_font(hint_label, LV_FONT_DEFAULT, 0);
   lv_obj_set_style_text_color(hint_label, lv_color_hex(0x94A3B8), 0);
-  lv_label_set_text(hint_label, "swipe up/down select  left/right adjust  tap enter");
-  lv_obj_align(hint_label, LV_ALIGN_TOP_RIGHT, -10, 9);
+  lv_label_set_text(hint_label, "swipe select  left/right edit  tap/BOOT enter");
+  lv_obj_align(hint_label, LV_ALIGN_TOP_RIGHT, -22, 13);
 
   for (uint8_t slot = 0; slot < kVisibleRows; ++slot) {
     rows[slot] = lv_label_create(panel);
-    lv_obj_set_style_text_font(rows[slot], LV_FONT_DEFAULT, 0);
-    lv_obj_set_size(rows[slot], width - 64, 16);
-    lv_obj_set_pos(rows[slot], 12, 30 + (slot * 16));
+    lv_obj_set_style_text_font(rows[slot], menu_font, 0);
+    lv_obj_set_size(rows[slot], width - 44, kRowHeight - 2);
+    lv_obj_set_pos(rows[slot], 22, kRowsTop + (slot * kRowHeight));
     lv_label_set_long_mode(rows[slot], LV_LABEL_LONG_CLIP);
   }
   refresh();

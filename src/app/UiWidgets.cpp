@@ -31,6 +31,23 @@ lv_obj_t *modalPanel(lv_obj_t *parent, int32_t width, int32_t height)
   return panel;
 }
 
+lv_obj_t *fullScreenPanel(lv_obj_t *parent, int32_t width, int32_t height, uint32_t background_color)
+{
+  lv_obj_t *panel = lv_obj_create(parent);
+  lv_obj_set_size(panel, width, height);
+  lv_obj_set_pos(panel, 0, 0);
+  lv_obj_set_style_radius(panel, 0, 0);
+  lv_obj_set_style_bg_color(panel, lv_color_hex(background_color), 0);
+  lv_obj_set_style_bg_opa(panel, LV_OPA_COVER, 0);
+  lv_obj_set_style_border_width(panel, 0, 0);
+  lv_obj_set_style_pad_all(panel, 0, 0);
+  lv_obj_set_style_pad_row(panel, 0, 0);
+  lv_obj_set_style_pad_column(panel, 0, 0);
+  lv_obj_clear_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_add_flag(panel, LV_OBJ_FLAG_HIDDEN);
+  return panel;
+}
+
 void setTextColor(lv_obj_t *obj, uint32_t color)
 {
   lv_obj_set_style_text_color(obj, lv_color_hex(color), 0);

@@ -179,6 +179,17 @@ const lv_font_t *body_font()
 #endif
 }
 
+const lv_font_t *menu_font()
+{
+#if LV_FONT_MONTSERRAT_20
+  return &lv_font_montserrat_20;
+#elif LV_FONT_MONTSERRAT_16
+  return &lv_font_montserrat_16;
+#else
+  return LV_FONT_DEFAULT;
+#endif
+}
+
 const lv_font_t *small_font()
 {
 #if LV_FONT_MONTSERRAT_10
@@ -1132,11 +1143,11 @@ extern "C" void clock_face_create(void)
   apply_theme_to_static_objects();
   realign_time_details();
 
-  DeskClock::BrightnessSettingsView::create(root_screen, width, height, body_font());
-  DeskClock::TimeSetupView::create(root_screen, width, height, body_font());
-  DeskClock::NetworkSetupView::create(root_screen, width, height, body_font());
-  DeskClock::AlarmManagerView::create(root_screen, width, height, body_font());
-  DeskClock::SystemMenuView::create(root_screen, width, height, body_font());
+  DeskClock::BrightnessSettingsView::create(root_screen, width, height, menu_font());
+  DeskClock::TimeSetupView::create(root_screen, width, height, menu_font());
+  DeskClock::NetworkSetupView::create(root_screen, width, height, menu_font());
+  DeskClock::AlarmManagerView::create(root_screen, width, height, menu_font());
+  DeskClock::SystemMenuView::create(root_screen, width, height, menu_font());
   DeskClock::AlarmAlertView::create(root_screen, width, height, time_font());
 
   lv_timer_create(update_clock_from_time_service, 250, nullptr);

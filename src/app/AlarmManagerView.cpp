@@ -29,7 +29,9 @@ enum class EditAction : uint8_t {
   Delete,
 };
 
-constexpr uint8_t kVisibleRows = 7;
+constexpr uint8_t kVisibleRows = 5;
+constexpr int32_t kRowHeight = 26;
+constexpr int32_t kRowsTop = 38;
 
 lv_obj_t *panel = nullptr;
 const lv_font_t *view_font = nullptr;
@@ -39,6 +41,8 @@ Alarm editing_alarm;
 bool editing_existing_alarm = false;
 uint8_t editing_alarm_id = 0;
 uint8_t selected_index = 1;
+lv_obj_t *title_label = nullptr;
+lv_obj_t *hint_label = nullptr;
 lv_obj_t *rows[kVisibleRows] = {};
 GestureTextMenu::TouchState touch_state;
 
@@ -328,17 +332,14 @@ void activate_delete_row()
 
 void draw_title(const char *text)
 {
-  lv_obj_t *title = lv_label_create(panel);
-  lv_obj_set_style_text_font(title, view_font, 0);
-  UiWidgets::setTextColor(title, 0x0F172A);
-  lv_label_set_text(title, text);
-  lv_obj_align(title, LV_ALIGN_TOP_LEFT, 12, 7);
-
-  lv_obj_t *hint = lv_label_create(panel);
-  lv_obj_set_style_text_font(hint, LV_FONT_DEFAULT, 0);
-  UiWidgets::setTextColor(hint, 0x64748B);
-  lv_label_set_text(hint, "up/down select  left/right adjust  tap enter");
-  lv_obj_align(hint, LV_ALIGN_TOP_RIGHT, -12, 11);
+  if (title_label != nullptr) {
+    lv_label_set_text(title_label, text);
+    lv_obj_align(title_label, LV_ALIGN_TOP_LEFT, 22, 8);
+  }
+  if (hint_label != nullptr) {
+    lv_label_set_text(hint_label, "swipe select  left/right edit  tap enter");
+    lv_obj_align(hint_label, LV_ALIGN_TOP_RIGHT, -22, 13);
+  }
 }
 
 void format_list_row(uint8_t index, char *row, size_t size, uint32_t &color)
@@ -465,6 +466,25 @@ const char *title_for_screen()
   return "Alarms";
 }
 
+uint32_t menu_color(uint32_t color)
+{
+  switch (color) {
+  case 0x0F172A:
+    return 0xCBD5E1;
+  case 0x0F766E:
+    return 0x34D399;
+  case 0xB91C1C:
+    return 0xF87171;
+  case 0xB45309:
+    return 0xFBBF24;
+  case 0x64748B:
+  case 0x94A3B8:
+    return color;
+  default:
+    return color;
+  }
+}
+
 void set_row(uint8_t slot, uint8_t index, bool selected)
 {
   char value[96];
@@ -473,11 +493,11 @@ void set_row(uint8_t slot, uint8_t index, bool selected)
   format_row(index, value, sizeof(value), color);
   snprintf(line, sizeof(line), "%s %.96s", selected ? ">" : " ", value);
   lv_label_set_text(rows[slot], line);
-  lv_obj_set_style_text_color(rows[slot], lv_color_hex(selected ? 0xFFFFFF : color), 0);
-  lv_obj_set_style_bg_color(rows[slot], lv_color_hex(selected ? 0x334155 : 0xFFFFFF), 0);
-  lv_obj_set_style_bg_opa(rows[slot], selected ? LV_OPA_90 : LV_OPA_TRANSP, 0);
-  lv_obj_set_style_radius(rows[slot], 4, 0);
-  lv_obj_set_style_pad_left(rows[slot], 4, 0);
+  lv_obj_set_style_text_color(rows[slot], lv_color_hex(selected ? 0xFFFFFF : menu_color(color)), 0);
+  lv_obj_set_style_bg_color(rows[slot], lv_color_hex(selected ? 0x334155 : 0x020617), 0);
+  lv_obj_set_style_bg_opa(rows[slot], selected ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
+  lv_obj_set_style_radius(rows[slot], 2, 0);
+  lv_obj_set_style_pad_left(rows[slot], 8, 0);
 }
 
 void refresh()
@@ -485,7 +505,6 @@ void refresh()
   if (panel == nullptr) {
     return;
   }
-  lv_obj_clean(panel);
   draw_title(title_for_screen());
 
   const uint8_t count = row_count();
@@ -500,13 +519,8 @@ void refresh()
   const uint8_t first = GestureTextMenu::firstVisibleIndex(selected_index, count, kVisibleRows);
   for (uint8_t slot = 0; slot < kVisibleRows; ++slot) {
     const uint8_t index = static_cast<uint8_t>(first + slot);
-    rows[slot] = lv_label_create(panel);
-    lv_obj_set_style_text_font(rows[slot], LV_FONT_DEFAULT, 0);
-    lv_obj_set_width(rows[slot], panel_width - 24);
-    lv_obj_set_height(rows[slot], 15);
-    lv_label_set_long_mode(rows[slot], LV_LABEL_LONG_CLIP);
-    lv_obj_set_pos(rows[slot], 12, 30 + static_cast<int32_t>(slot) * 16);
     if (index < count) {
+      lv_obj_clear_flag(rows[slot], LV_OBJ_FLAG_HIDDEN);
       set_row(slot, index, index == selected_index);
     } else {
       lv_obj_add_flag(rows[slot], LV_OBJ_FLAG_HIDDEN);
@@ -545,9 +559,27 @@ namespace AlarmManagerView {
 void create(lv_obj_t *parent, int32_t width, int32_t height, const lv_font_t *font)
 {
   view_font = font != nullptr ? font : LV_FONT_DEFAULT;
-  panel_width = width - 28;
-  panel = UiWidgets::modalPanel(parent, width, height);
+  panel_width = width;
+  panel = UiWidgets::fullScreenPanel(parent, width, height);
   GestureTextMenu::attach(panel, &touch_state, handle_input, nullptr);
+
+  title_label = lv_label_create(panel);
+  lv_obj_set_style_text_font(title_label, view_font, 0);
+  UiWidgets::setTextColor(title_label, 0xFFFFFF);
+  lv_obj_align(title_label, LV_ALIGN_TOP_LEFT, 22, 8);
+
+  hint_label = lv_label_create(panel);
+  lv_obj_set_style_text_font(hint_label, LV_FONT_DEFAULT, 0);
+  UiWidgets::setTextColor(hint_label, 0x94A3B8);
+  lv_obj_align(hint_label, LV_ALIGN_TOP_RIGHT, -22, 13);
+
+  for (uint8_t slot = 0; slot < kVisibleRows; ++slot) {
+    rows[slot] = lv_label_create(panel);
+    lv_obj_set_style_text_font(rows[slot], view_font, 0);
+    lv_obj_set_size(rows[slot], panel_width - 44, kRowHeight - 2);
+    lv_label_set_long_mode(rows[slot], LV_LABEL_LONG_CLIP);
+    lv_obj_set_pos(rows[slot], 22, kRowsTop + static_cast<int32_t>(slot) * kRowHeight);
+  }
   refresh();
 }
 

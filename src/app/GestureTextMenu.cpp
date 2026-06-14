@@ -8,9 +8,9 @@ namespace DeskClock {
 namespace GestureTextMenu {
 namespace {
 
-constexpr int16_t kSwipeThresholdPx = 32;
-constexpr int16_t kAxisBiasPx = 10;
-constexpr int16_t kTapSlopPx = 18;
+constexpr int16_t kSwipeThresholdPx = 22;
+constexpr int16_t kAxisBiasPx = 6;
+constexpr int16_t kTapSlopPx = 14;
 
 struct HandlerContext {
   TouchState *state = nullptr;
@@ -48,6 +48,11 @@ Input classify_drag(const lv_point_t &start, const lv_point_t &end)
   return Input::None;
 }
 
+bool is_swipe(Input input)
+{
+  return input == Input::Up || input == Input::Down || input == Input::Left || input == Input::Right;
+}
+
 void event_handler(lv_event_t *event)
 {
   auto *context = static_cast<HandlerContext *>(lv_event_get_user_data(event));
@@ -65,16 +70,24 @@ void event_handler(lv_event_t *event)
     get_pointer(context->state->start);
     context->state->last = context->state->start;
     context->state->active = true;
+    context->state->emitted_swipe = false;
     return;
   }
 
   if (code == LV_EVENT_PRESSING && context->state->active) {
     get_pointer(context->state->last);
+    const Input input = classify_drag(context->state->start, context->state->last);
+    if (is_swipe(input) && context->callback != nullptr) {
+      context->state->emitted_swipe = true;
+      context->state->start = context->state->last;
+      context->callback(input, context->user_data);
+    }
     return;
   }
 
   if (code == LV_EVENT_PRESS_LOST) {
     context->state->active = false;
+    context->state->emitted_swipe = false;
     return;
   }
 
@@ -84,9 +97,20 @@ void event_handler(lv_event_t *event)
 
   get_pointer(context->state->last);
   const Input input = classify_drag(context->state->start, context->state->last);
+  const bool emitted_swipe = context->state->emitted_swipe;
   context->state->active = false;
+  context->state->emitted_swipe = false;
 
-  if (input != Input::None && context->callback != nullptr) {
+  if (context->callback == nullptr) {
+    return;
+  }
+  if (is_swipe(input)) {
+    if (!emitted_swipe) {
+      context->callback(input, context->user_data);
+    }
+    return;
+  }
+  if (!emitted_swipe && input == Input::Tap) {
     context->callback(input, context->user_data);
   }
 }
@@ -117,6 +141,7 @@ void reset(TouchState *state)
 {
   if (state != nullptr) {
     state->active = false;
+    state->emitted_swipe = false;
     state->start = {0, 0};
     state->last = {0, 0};
   }

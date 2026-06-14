@@ -9,6 +9,7 @@ namespace UiWidgets {
 
 lv_obj_t *button(lv_obj_t *parent, const char *text, int32_t width, int32_t height);
 lv_obj_t *modalPanel(lv_obj_t *parent, int32_t width, int32_t height);
+lv_obj_t *fullScreenPanel(lv_obj_t *parent, int32_t width, int32_t height, uint32_t background_color = 0x020617);
 void setTextColor(lv_obj_t *obj, uint32_t color);
 
 } // namespace UiWidgets

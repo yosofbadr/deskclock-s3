@@ -16,6 +16,7 @@ enum class Input {
 
 struct TouchState {
   bool active = false;
+  bool emitted_swipe = false;
   lv_point_t start = {0, 0};
   lv_point_t last = {0, 0};
 };
