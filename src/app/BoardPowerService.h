@@ -10,5 +10,10 @@ namespace BoardPowerService {
 bool begin();
 bool batteryPowerHoldEnabled();
 
+// Enable the board audio amplifier rail through the same TCA9554 instance used
+// for SYS_EN. Keeping all expander writes here prevents later audio setup from
+// resetting the power-hold pin back to input mode.
+bool enableAudioPower();
+
 } // namespace BoardPowerService
 } // namespace DeskClock

@@ -5,12 +5,12 @@
 #include <math.h>
 #include <stdint.h>
 
+#include "BoardPowerService.h"
 #include "codec_board/codec_board.h"
 #include "codec_board/codec_init.h"
 #include "esp_codec_dev/include/esp_codec_dev.h"
 #include "esp_err.h"
 #include "freertos/FreeRTOS.h"
-#include "tca9554/esp_io_expander_tca9554.h"
 
 namespace DeskClock {
 namespace {
@@ -27,7 +27,6 @@ constexpr const char *kAudioEnabledKey = "aud_en";
 constexpr const char *kAlarmVolumeKey = "alarm_vol";
 
 esp_codec_dev_handle_t playback = nullptr;
-esp_io_expander_handle_t io_expander = nullptr;
 bool initialized = false;
 bool init_attempted = false;
 uint32_t active_started_ms = 0;
@@ -68,22 +67,7 @@ void save_settings()
 
 bool enable_audio_expander()
 {
-  i2c_master_bus_handle_t bus = nullptr;
-  esp_err_t err = i2c_master_get_bus_handle(0, &bus);
-  if (err != ESP_OK || bus == nullptr) {
-    Serial.printf("AlarmToneService: failed to get I2C bus 0, err=%d\n", err);
-    return false;
-  }
-
-  err = esp_io_expander_new_i2c_tca9554(bus, ESP_IO_EXPANDER_I2C_TCA9554_ADDRESS_000, &io_expander);
-  if (err != ESP_OK) {
-    Serial.printf("AlarmToneService: failed to create TCA9554 expander, err=%d\n", err);
-    return false;
-  }
-
-  ESP_ERROR_CHECK_WITHOUT_ABORT(esp_io_expander_set_dir(io_expander, IO_EXPANDER_PIN_NUM_7, IO_EXPANDER_OUTPUT));
-  ESP_ERROR_CHECK_WITHOUT_ABORT(esp_io_expander_set_level(io_expander, IO_EXPANDER_PIN_NUM_7, 1));
-  return true;
+  return BoardPowerService::enableAudioPower();
 }
 
 bool init_audio_codecs()

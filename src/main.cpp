@@ -18,7 +18,6 @@
 #include "esp_codec_dev/include/esp_codec_dev.h"
 #include "esp_err.h"
 #include "freertos/FreeRTOS.h"
-#include "tca9554/esp_io_expander_tca9554.h"
 
 namespace {
 
@@ -30,27 +29,12 @@ constexpr float kPi = 3.14159265358979323846F;
 
 esp_codec_dev_handle_t playback = nullptr;
 esp_codec_dev_handle_t record = nullptr;
-esp_io_expander_handle_t io_expander = nullptr;
 
 bool enable_audio_expander()
 {
-  i2c_master_bus_handle_t bus = nullptr;
-  esp_err_t err = i2c_master_get_bus_handle(0, &bus);
-  if (err != ESP_OK || bus == nullptr) {
-    Serial.printf("Audio test: failed to get I2C bus 0, err=%d\n", err);
-    return false;
-  }
-
-  err = esp_io_expander_new_i2c_tca9554(bus, ESP_IO_EXPANDER_I2C_TCA9554_ADDRESS_000, &io_expander);
-  if (err != ESP_OK) {
-    Serial.printf("Audio test: failed to create TCA9554 expander, err=%d\n", err);
-    return false;
-  }
-
-  // Matches Waveshare's audio example. This enables the board's audio power/control line.
-  ESP_ERROR_CHECK_WITHOUT_ABORT(esp_io_expander_set_dir(io_expander, IO_EXPANDER_PIN_NUM_7, IO_EXPANDER_OUTPUT));
-  ESP_ERROR_CHECK_WITHOUT_ABORT(esp_io_expander_set_level(io_expander, IO_EXPANDER_PIN_NUM_7, 1));
-  return true;
+  // Matches Waveshare's audio example, but routes through BoardPowerService so
+  // enabling audio cannot reset the shared TCA9554 SYS_EN power-hold pin.
+  return DeskClock::BoardPowerService::enableAudioPower();
 }
 
 bool init_audio_codecs()
