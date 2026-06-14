@@ -31,7 +31,7 @@ The firmware currently brings up a landscape LVGL desk clock with:
 - large RTC-backed time display in the center
 - date line and sync status dot
 - next-alarm indicator on the clock face
-- on-device time setup, Wi-Fi setup, brightness settings, and alarm management
+- on-device text-menu settings for time, Wi-Fi, brightness/theme/audio, and alarm management
 - persisted settings and alarms using ESP32 local storage
 - alarm audio through the board speaker when enabled
 - optional personal theme assets loaded directly from a FAT32 microSD card; see [`docs/sd-assets.md`](docs/sd-assets.md)
@@ -40,16 +40,20 @@ Alarm behavior implemented so far:
 
 - up to five saved alarms
 - recurrence choices: once, daily, weekdays, weekends
-- hour/minute rollers for alarm time editing
-- explicit recurrence buttons in the alarm editor
-- enable/disable per alarm
+- compact text-row alarm list and editor
+- selected-row gesture controls: swipe up/down to choose a row, swipe left/right to adjust the selected value, tap to enter/save/back
+- enable/disable per alarm from the editor or by left/right swiping an alarm row in the list
 - delete confirmation
 - full-screen alarm alert with Dismiss and Snooze
 - fixed 10-minute snooze
 - one-time alarms disable after firing
 - missed alarms do not catch up on boot
 - BOOT button dismisses an active alarm
-- BOOT long-press opens setup
+- BOOT short-press opens settings from the clock face, or activates/adjusts the selected row in any open text menu
+- BOOT long-press also opens the settings menu
+- PWR short-press is ignored to avoid accidental navigation
+- PWR long-press releases the battery power hold for shutdown on battery power; holding PWR starts the board when it is off
+- RESET is a hardware reset line; on ESP32 external-reset boots, firmware advances the saved brightness through five visible levels
 
 ## Standalone/battery power
 
@@ -127,10 +131,20 @@ sips -s format png .pio/deskclock-sim.ppm --out .pio/deskclock-sim.png
 Open a specific view before capturing:
 
 ```sh
+.pio/sim-build/deskclock_sim --screenshot .pio/deskclock-settings.ppm --open settings
 .pio/sim-build/deskclock_sim --screenshot .pio/deskclock-time.ppm --open time
 .pio/sim-build/deskclock_sim --screenshot .pio/deskclock-alarms.ppm --open alarms
 .pio/sim-build/deskclock_sim --screenshot .pio/deskclock-brightness.ppm --open brightness
 .pio/sim-build/deskclock_sim --screenshot .pio/deskclock-network.ppm --open network
+.pio/sim-build/deskclock_sim --screenshot .pio/deskclock-network-password.ppm --open network-password
+```
+
+Drive the selected-row interaction before capturing with comma-separated `--nav` actions (`up`, `down`, `left`, `right`, `tap`). This mirrors the text-menu control model: vertical movement selects rows, horizontal movement adjusts the selected value, and tap enters/saves/backs out.
+
+```sh
+.pio/sim-build/deskclock_sim --open time --nav down,right,down,right --screenshot .pio/deskclock-time-nav.ppm
+.pio/sim-build/deskclock_sim --open alarms --nav tap,right,down,right --screenshot .pio/deskclock-alarm-edit-nav.ppm
+.pio/sim-build/deskclock_sim --open network-password --nav right,tap,down,tap --screenshot .pio/deskclock-network-password-nav.ppm
 ```
 
 Capture the deterministic visual-reference scene used for clock-face layout comparison:
@@ -151,6 +165,18 @@ Preview SD-card theme assets in the simulator by preparing `.pio/sdcard` first:
 ```sh
 python3 scripts/prepare_sd_assets.py
 .pio/sim-build/deskclock_sim --reference-scene --theme 2 --screenshot .pio/deskclock-theme-2.ppm
+```
+
+Copy regenerated assets to a mounted FAT32 microSD card named `DESKCLOCK`:
+
+```sh
+python3 scripts/copy_sd_assets.py
+```
+
+Or pass an explicit mount path:
+
+```sh
+python3 scripts/copy_sd_assets.py /Volumes/DESKCLOCK
 ```
 
 Or pin any RTC time in the simulator:
@@ -176,14 +202,15 @@ After flashing normal firmware, verify:
 
 1. Serial boot log includes `DeskClock S3: booting RTC + LVGL shell (0.1.0-dev)` so the flashed image is identifiable.
 2. Clock face shows retained RTC time and date.
-3. Short-press BOOT and confirm serial logs `BOOT: pressed` and `BOOT: released after ... ms`.
-4. Long-press BOOT for at least 1.2 seconds and confirm serial log `BOOT: long press opening setup` plus setup UI opens.
-5. Alarm list opens from the next-alarm area.
-6. Add an alarm a few minutes ahead using the rollers and recurrence buttons.
-7. Reboot and confirm the alarm persists.
-8. Let the alarm fire and confirm visual alert plus audio.
-9. Tap Dismiss and confirm the alert does not immediately re-open during the same minute.
-10. Create/fire another alarm, tap Snooze, and confirm the next-alarm indicator shows the snoozed occurrence.
-11. Let the snoozed alarm fire and confirm the sound window restarts.
-12. Test BOOT while an alert is active and confirm it logs `BOOT: dismissing active alarm` and dismisses the alarm.
-13. Optional edge check: fill all five saved alarm slots, fire one, tap Snooze, and confirm Snooze still works without needing a free saved-alarm slot.
+3. Short-press BOOT and confirm serial logs `BOOT: pressed`, `BOOT: released after ... ms`, and `BOOT: opening settings menu` plus setup UI opens.
+4. In settings, verify swipe up/down changes the selected text row and swipe left/right adjusts timezone, brightness, or theme rows.
+5. Press BOOT while a row is selected and confirm it activates/adjusts that row; navigate to `Back` and press BOOT to close the menu.
+6. Alarm list opens from the next-alarm area.
+7. Add an alarm a few minutes ahead using the selected-row editor: up/down selects hour/minute/repeat/enabled rows; left/right adjusts values; tap Save stores it.
+8. Reboot and confirm the alarm persists.
+9. Let the alarm fire and confirm visual alert plus audio.
+10. Tap Dismiss and confirm the alert does not immediately re-open during the same minute.
+11. Create/fire another alarm, tap Snooze, and confirm the next-alarm indicator shows the snoozed occurrence.
+12. Let the snoozed alarm fire and confirm the sound window restarts.
+13. Test BOOT while an alert is active and confirm it logs `BOOT: dismissing active alarm` and dismisses the alarm.
+14. Optional edge check: fill all five saved alarm slots, fire one, tap Snooze, and confirm Snooze still works without needing a free saved-alarm slot.
