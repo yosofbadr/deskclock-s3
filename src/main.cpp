@@ -1,6 +1,7 @@
 #include <Arduino.h>
 
 #include "i2c_bsp.h"
+#include "app/BoardPowerService.h"
 
 #ifndef DESKCLOCK_FIRMWARE_VERSION
 #define DESKCLOCK_FIRMWARE_VERSION "dev"
@@ -185,12 +186,16 @@ void run_audio_cycle()
 
 void setup()
 {
-  delay(500);
+  delay(50);
   Serial.begin(115200);
-  delay(500);
+  delay(50);
+
+  i2c_master_Init();
+  DeskClock::BoardPowerService::begin();
+  delay(450);
 
   Serial.printf("DeskClock S3 audio hardware test starting (%s)\n", DESKCLOCK_FIRMWARE_VERSION);
-  i2c_master_Init();
+  Serial.printf("BoardPowerService: battery power hold %s\n", DeskClock::BoardPowerService::batteryPowerHoldEnabled() ? "enabled" : "unavailable");
 
   const bool expander_ok = enable_audio_expander();
   const bool codecs_ok = init_audio_codecs();
@@ -266,15 +271,19 @@ void handle_boot_button()
 
 void setup()
 {
-  delay(500);
+  delay(50);
   Serial.begin(115200);
-  delay(500);
-
-  Serial.printf("DeskClock S3: booting RTC + LVGL shell (%s)\n", DESKCLOCK_FIRMWARE_VERSION);
+  delay(50);
 
   pinMode(kBootButtonPin, INPUT_PULLUP);
 
   i2c_master_Init();
+  DeskClock::BoardPowerService::begin();
+  delay(450);
+
+  Serial.printf("DeskClock S3: booting RTC + LVGL shell (%s)\n", DESKCLOCK_FIRMWARE_VERSION);
+  Serial.printf("BoardPowerService: battery power hold %s\n", DeskClock::BoardPowerService::batteryPowerHoldEnabled() ? "enabled" : "unavailable");
+
   DeskClock::SettingsService::begin();
   DeskClock::NetworkService::begin();
   DeskClock::TimeService::begin();
