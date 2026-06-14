@@ -289,7 +289,8 @@ void handle_boot_short_press()
 
 void handle_power_short_press()
 {
-  Serial.println("PWR: short press ignored; hold to power off");
+  const uint8_t next = DeskClock::BrightnessService::cyclePreset(1);
+  Serial.printf("PWR: brightness preset -> %u (%u levels)\n", next, DeskClock::BrightnessService::presetCount());
 }
 
 void update_button(ButtonState &button, uint32_t now_ms)

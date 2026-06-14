@@ -51,9 +51,9 @@ Alarm behavior implemented so far:
 - BOOT button dismisses an active alarm
 - BOOT short-press opens settings from the clock face, or activates/adjusts the selected row in any open text menu
 - BOOT long-press also opens the settings menu
-- PWR short-press is ignored to avoid accidental navigation
+- PWR short-press cycles the saved brightness through five visible levels without rebooting
 - PWR long-press releases the battery power hold for shutdown on battery power; holding PWR starts the board when it is off
-- RESET is a hardware reset line; on ESP32 external-reset boots, firmware advances the saved brightness through five visible levels
+- RESET is a hardware reset line; on ESP32 external-reset boots, firmware also advances the saved brightness through five visible levels
 
 ## Standalone/battery power
 
