@@ -50,6 +50,12 @@ Alarm behavior implemented so far:
 - BOOT button dismisses an active alarm
 - BOOT long-press opens setup
 
+## Standalone/battery power
+
+The Waveshare board uses an internal battery power-hold circuit controlled through the TCA9554 I/O expander. DeskClock S3 now enables the board `SYS_EN` hold pin early during boot, matching the behavior used by the RSVP Nano firmware, so the device should remain powered after USB is removed or after the user releases the board power button.
+
+If the board is fully off and not connected to USB, hold/press the board **PWR** button to start it. The firmware must boot far enough to enable `SYS_EN`; if it does not stay on, reconnect USB, flash the latest firmware, then test again with a charged battery.
+
 ## Build and flash
 
 Normal firmware:
@@ -97,6 +103,42 @@ Current release-readiness build checks:
 pio run -e waveshare_touch_lcd_3_49
 pio run -e audio_test
 ```
+
+## Desktop simulator
+
+A macOS LVGL/SDL simulator is available for UI work without the physical board. It renders the app at the board's landscape screen size, 640×172, with mocked RTC, preferences, Wi-Fi, backlight, and audio services.
+
+Build and run the interactive simulator:
+
+```sh
+cmake -S sim -B .pio/sim-build
+cmake --build .pio/sim-build
+.pio/sim-build/deskclock_sim
+```
+
+Capture a headless screenshot for review/regression checks:
+
+```sh
+.pio/sim-build/deskclock_sim --screenshot .pio/deskclock-sim.ppm
+sips -s format png .pio/deskclock-sim.ppm --out .pio/deskclock-sim.png
+```
+
+Open a specific view before capturing:
+
+```sh
+.pio/sim-build/deskclock_sim --screenshot .pio/deskclock-time.ppm --open time
+.pio/sim-build/deskclock_sim --screenshot .pio/deskclock-alarms.ppm --open alarms
+.pio/sim-build/deskclock_sim --screenshot .pio/deskclock-brightness.ppm --open brightness
+.pio/sim-build/deskclock_sim --screenshot .pio/deskclock-network.ppm --open network
+```
+
+Dump visible LVGL object coordinates when diagnosing layout issues:
+
+```sh
+.pio/sim-build/deskclock_sim --open time --dump-layout
+```
+
+The simulator is not a full ESP32-S3 hardware emulator: it does not verify real LCD/touch timing, speaker output, Wi-Fi, power, or RTC electrical behavior. Use it for layout, theme, navigation, and clock/alarm state-flow work; keep the hardware checklist for final device validation.
 
 ## On-device verification checklist
 
