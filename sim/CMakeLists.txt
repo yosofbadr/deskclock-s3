@@ -22,6 +22,7 @@ list(APPEND LVGL_SOURCES
 
 file(GLOB APP_SOURCES CONFIGURE_DEPENDS
   "${REPO_ROOT}/src/app/*.cpp"
+  "${REPO_ROOT}/src/app/*.c"
 )
 
 add_executable(deskclock_sim

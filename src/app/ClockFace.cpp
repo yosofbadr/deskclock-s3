@@ -14,6 +14,8 @@
 #include "UiWidgets.h"
 #include "lvgl.h"
 
+LV_FONT_DECLARE(clock_font_time_88);
+
 namespace {
 
 struct VisualTheme {
@@ -34,9 +36,9 @@ struct VisualTheme {
 };
 
 constexpr VisualTheme kThemes[] = {
-    {"meadow", 0xF7F1E3, 0xFBF4E6, 0xEBDCC4, 0xFFF8E8, 0xFFFDF7, 0xE7D7BB, 0x293241, 0x6B7280, 0xAFA38E, 0xD97706, 0x2F5F8F, 0xFFFFFF, 0xE58A3A},
-    {"blush", 0xFFF1F4, 0xFFF8F4, 0xF7D9D9, 0xFFFDFB, 0xFFFDFC, 0xF3C8D2, 0x51313A, 0x8D5D6B, 0xC9A3AC, 0xD84E6C, 0xB95C7B, 0xFFFFFF, 0xE96B84},
-    {"dusk", 0x0B1020, 0x15172C, 0x211B33, 0x0F1630, 0x181A31, 0x3D355A, 0xF7F2FF, 0xB9A8D9, 0x6D5B8F, 0x9B5DE5, 0xF15BB5, 0xF5EEFF, 0xC084FC},
+    {"studio", 0xF4E7D4, 0xFFF3E2, 0xE7C48B, 0xFFF8EA, 0xFFFDF7, 0xE6D5BE, 0x26313D, 0x5F6770, 0xA28F78, 0xE8752E, 0x245C91, 0xFFFFFF, 0xF09B45},
+    {"blush", 0xFFF0F2, 0xFFF6F0, 0xF3D4C7, 0xFFFDF8, 0xFFFDFC, 0xF0C8CC, 0x51313A, 0x8D5D6B, 0xC9A3AC, 0xDE4562, 0xD93A61, 0xFFFFFF, 0xE96B84},
+    {"dusk", 0x0B1020, 0x14172B, 0x211B33, 0x111832, 0x181A31, 0x3D355A, 0xF7F2FF, 0xB9A8D9, 0x6D5B8F, 0x9B5DE5, 0xF15BB5, 0xF5EEFF, 0xC084FC},
 };
 
 constexpr uint8_t kThemeCount = sizeof(kThemes) / sizeof(kThemes[0]);
@@ -61,6 +63,23 @@ lv_obj_t *mascot_eye_left = nullptr;
 lv_obj_t *mascot_eye_right = nullptr;
 lv_obj_t *mascot_mouth = nullptr;
 lv_obj_t *sync_dot = nullptr;
+lv_obj_t *wall_panel = nullptr;
+lv_obj_t *picture_frame = nullptr;
+lv_obj_t *picture_inner = nullptr;
+lv_obj_t *pendant_cord = nullptr;
+lv_obj_t *pendant_lamp = nullptr;
+lv_obj_t *shelf = nullptr;
+lv_obj_t *shelf_shadow = nullptr;
+lv_obj_t *house_body = nullptr;
+lv_obj_t *house_roof = nullptr;
+lv_obj_t *weather_sun = nullptr;
+lv_obj_t *weather_cloud_left = nullptr;
+lv_obj_t *weather_cloud_right = nullptr;
+lv_obj_t *weather_cloud_base = nullptr;
+lv_obj_t *focus_ring = nullptr;
+lv_obj_t *focus_ring_gap = nullptr;
+lv_obj_t *focus_leaf = nullptr;
+lv_obj_t *message_heart = nullptr;
 
 lv_obj_t *time_label = nullptr;
 lv_obj_t *ampm_label = nullptr;
@@ -75,25 +94,31 @@ lv_obj_t *calendar_weekday_labels[7] = {};
 lv_obj_t *calendar_day_labels[42] = {};
 lv_obj_t *status_label = nullptr;
 lv_obj_t *weather_label = nullptr;
+lv_obj_t *weather_detail_label = nullptr;
 lv_obj_t *next_alarm_label = nullptr;
 lv_obj_t *message_label = nullptr;
 lv_obj_t *theme_name_label = nullptr;
 
 const lv_font_t *time_font()
 {
-#if LV_FONT_MONTSERRAT_48
-  return &lv_font_montserrat_48;
+  return &clock_font_time_88;
+}
+
+const lv_font_t *large_font()
+{
+#if LV_FONT_MONTSERRAT_32
+  return &lv_font_montserrat_32;
+#elif LV_FONT_MONTSERRAT_28
+  return &lv_font_montserrat_28;
 #else
   return LV_FONT_DEFAULT;
 #endif
 }
 
-const lv_font_t *large_font()
+const lv_font_t *seconds_font()
 {
 #if LV_FONT_MONTSERRAT_28
   return &lv_font_montserrat_28;
-#elif LV_FONT_MONTSERRAT_32
-  return &lv_font_montserrat_32;
 #else
   return LV_FONT_DEFAULT;
 #endif
@@ -110,7 +135,9 @@ const lv_font_t *body_font()
 
 const lv_font_t *small_font()
 {
-#if LV_FONT_MONTSERRAT_12
+#if LV_FONT_MONTSERRAT_10
+  return &lv_font_montserrat_10;
+#elif LV_FONT_MONTSERRAT_12
   return &lv_font_montserrat_12;
 #else
   return LV_FONT_DEFAULT;
@@ -183,7 +210,7 @@ lv_obj_t *card(lv_obj_t *parent, int32_t x, int32_t y, int32_t width, int32_t he
   lv_obj_t *obj = lv_obj_create(parent);
   lv_obj_set_pos(obj, x, y);
   lv_obj_set_size(obj, width, height);
-  lv_obj_set_style_radius(obj, 16, 0);
+  lv_obj_set_style_radius(obj, 12, 0);
   lv_obj_set_style_border_width(obj, 1, 0);
   lv_obj_set_style_pad_all(obj, 0, 0);
   lv_obj_set_style_shadow_width(obj, 0, 0);
@@ -231,17 +258,13 @@ void realign_time_details()
   if (time_label == nullptr || ampm_label == nullptr || seconds_label == nullptr) {
     return;
   }
-  lv_obj_update_layout(time_label);
-  lv_obj_align(time_label, LV_ALIGN_CENTER, -10, -18);
-  lv_obj_align_to(ampm_label, time_label, LV_ALIGN_OUT_RIGHT_MID, 6, -16);
-  lv_obj_align_to(seconds_label, ampm_label, LV_ALIGN_OUT_BOTTOM_MID, 0, 0);
-}
 
-void update_next_alarm_label(const DeskClock::DateTime &now)
-{
-  char buffer[44];
-  DeskClock::ClockDisplayFormatter::nextAlarmText(buffer, sizeof(buffer), now);
-  lv_label_set_text(next_alarm_label, buffer);
+  lv_obj_set_align(time_label, LV_ALIGN_TOP_LEFT);
+  lv_obj_set_align(ampm_label, LV_ALIGN_TOP_LEFT);
+  lv_obj_set_align(seconds_label, LV_ALIGN_TOP_LEFT);
+  lv_obj_set_pos(time_label, 86, 44);
+  lv_obj_set_pos(ampm_label, 324, 58);
+  lv_obj_set_pos(seconds_label, 324, 78);
 }
 
 void update_calendar_cards(const DeskClock::DateTime &now)
@@ -318,22 +341,39 @@ void apply_theme_to_static_objects()
 
   style_card(left_date_card, t.card_bg, t.card_border);
   style_card(calendar_card, t.card_bg, t.card_border);
-  style_card(stage_card, t.stage_bg, t.card_border);
+  style_soft_shape(stage_card, t.stage_bg, 0);
   style_card(right_status_card, t.card_bg, t.card_border);
   style_card(right_alarm_card, t.card_bg, t.card_border);
   style_card(right_message_card, t.card_bg, t.card_border);
 
+  style_soft_shape(wall_panel, t.window_bg, 0);
   style_soft_shape(floor_panel, t.floor_bg, 0);
   style_soft_shape(window_panel, t.window_bg, 10);
   style_soft_shape(window_glow, t.card_bg, 12);
-  style_soft_shape(plant_pot, t.accent, 6);
-  style_soft_shape(plant_leaf_left, t.accent_2, LV_RADIUS_CIRCLE);
-  style_soft_shape(plant_leaf_right, t.accent_2, LV_RADIUS_CIRCLE);
+  style_soft_shape(picture_frame, t.floor_bg, 5);
+  style_soft_shape(picture_inner, t.card_bg, 3);
+  style_soft_shape(pendant_cord, t.accent, 0);
+  style_soft_shape(pendant_lamp, t.card_bg, LV_RADIUS_CIRCLE);
+  style_soft_shape(shelf_shadow, 0xB98A52, 2);
+  style_soft_shape(shelf, t.floor_bg, 2);
+  style_soft_shape(house_body, t.card_bg, 3);
+  style_soft_shape(house_roof, t.accent, 2);
+  style_soft_shape(plant_pot, t.card_bg, 6);
+  style_soft_shape(plant_leaf_left, 0x78945B, LV_RADIUS_CIRCLE);
+  style_soft_shape(plant_leaf_right, 0x6F8C51, LV_RADIUS_CIRCLE);
   style_soft_shape(mascot_ear_left, t.mascot, LV_RADIUS_CIRCLE);
   style_soft_shape(mascot_ear_right, t.mascot, LV_RADIUS_CIRCLE);
   style_soft_shape(mascot_head, t.mascot, 24);
   style_soft_shape(mascot_eye_left, t.text, LV_RADIUS_CIRCLE);
   style_soft_shape(mascot_eye_right, t.text, LV_RADIUS_CIRCLE);
+  style_soft_shape(weather_sun, 0xF5B642, LV_RADIUS_CIRCLE);
+  style_soft_shape(weather_cloud_left, t.accent_2, LV_RADIUS_CIRCLE);
+  style_soft_shape(weather_cloud_right, t.accent_2, LV_RADIUS_CIRCLE);
+  style_soft_shape(weather_cloud_base, t.accent_2, 8);
+  style_soft_shape(focus_ring, t.accent_2, LV_RADIUS_CIRCLE);
+  style_soft_shape(focus_ring_gap, t.card_bg, LV_RADIUS_CIRCLE);
+  style_soft_shape(focus_leaf, 0x6B8F3F, LV_RADIUS_CIRCLE);
+  style_soft_shape(message_heart, t.accent_2, LV_RADIUS_CIRCLE);
 
   set_text_color(time_label, t.accent_2);
   set_text_color(ampm_label, t.accent);
@@ -346,6 +386,7 @@ void apply_theme_to_static_objects()
   set_text_color(calendar_month_label, t.text);
   set_text_color(status_label, t.muted);
   set_text_color(weather_label, t.text);
+  set_text_color(weather_detail_label, t.text);
   set_text_color(next_alarm_label, t.text);
   set_text_color(message_label, t.text);
   set_text_color(theme_name_label, t.faint);
@@ -392,8 +433,9 @@ void update_clock_from_time_service(lv_timer_t *)
     lv_label_set_text(seconds_label, "set");
     lv_label_set_text(greeting_label, "Set the time to start");
     lv_label_set_text(status_label, DeskClock::ClockDisplayFormatter::statusText(snapshot));
-    lv_label_set_text(weather_label, "Weather\nopt-in");
-    lv_label_set_text(next_alarm_label, "Tap to add alarm");
+    lv_label_set_text(weather_label, "--°C");
+    lv_label_set_text(weather_detail_label, "Weather\nopt-in");
+    lv_label_set_text(next_alarm_label, "Deep Work\nSet time first");
     lv_label_set_text(message_label, "Hold BOOT\nfor setup");
     lv_obj_set_style_bg_color(sync_dot, lv_color_hex(DeskClock::ClockDisplayFormatter::syncDotColor(DeskClock::SyncState::Unreliable, blink)), 0);
     update_calendar_cards(snapshot.now);
@@ -413,17 +455,18 @@ void update_clock_from_time_service(lv_timer_t *)
   }
 
   char seconds_buffer[8];
-  snprintf(seconds_buffer, sizeof(seconds_buffer), ":%02u", snapshot.now.second);
+  snprintf(seconds_buffer, sizeof(seconds_buffer), "%02u", snapshot.now.second);
   lv_label_set_text(seconds_label, seconds_buffer);
 
   char greeting_buffer[48];
-  snprintf(greeting_buffer, sizeof(greeting_buffer), "* %s", greeting_for_hour(snapshot.now.hour));
+  snprintf(greeting_buffer, sizeof(greeting_buffer), "%s, Alex", greeting_for_hour(snapshot.now.hour));
   lv_label_set_text(greeting_label, greeting_buffer);
 
   lv_label_set_text(status_label, DeskClock::ClockDisplayFormatter::statusText(snapshot));
-  lv_label_set_text(weather_label, "Weather\n--°");
-  lv_label_set_text(message_label, "You got this!\nsettings");
-  update_next_alarm_label(snapshot.now);
+  lv_label_set_text(weather_label, "24°C");
+  lv_label_set_text(weather_detail_label, "Cloudy\n26 / 18");
+  lv_label_set_text(message_label, "You got this!");
+  lv_label_set_text(next_alarm_label, "Deep Work\nEnds 12:00");
   update_calendar_cards(snapshot.now);
   lv_obj_set_style_bg_color(sync_dot, lv_color_hex(DeskClock::ClockDisplayFormatter::syncDotColor(snapshot.sync_state, blink)), 0);
 
@@ -450,36 +493,45 @@ extern "C" void clock_face_create(void)
   const int32_t margin = 8;
   const int32_t gap = 8;
   const int32_t left_width = 108;
-  const int32_t right_width = 132;
+  const int32_t right_width = 124;
   const int32_t right_x = width - margin - right_width;
   const int32_t center_x = margin + left_width + gap;
   const int32_t center_width = right_x - gap - center_x;
   const int32_t content_height = height - (margin * 2);
 
-  left_date_card = card(root_screen, margin, margin, left_width, 56);
-  calendar_card = card(root_screen, margin, margin + 62, left_width, content_height - 62);
-  stage_card = card(root_screen, center_x, margin, center_width, content_height);
-  right_status_card = card(root_screen, right_x, margin, right_width, 48);
-  right_alarm_card = card(root_screen, right_x, margin + 54, right_width, 48);
-  right_message_card = card(root_screen, right_x + 12, margin + 108, right_width - 12, content_height - 108);
+  stage_card = plain_obj(root_screen, center_x, 0, center_width, height);
+  left_date_card = card(root_screen, margin, margin, left_width, 64);
+  calendar_card = card(root_screen, margin, margin + 72, left_width, content_height - 72);
+  right_status_card = card(root_screen, right_x, margin + 4, right_width, 48);
+  right_alarm_card = card(root_screen, right_x, margin + 60, right_width, 50);
+  right_message_card = card(root_screen, right_x + 44, margin + 112, right_width - 44, content_height - 112);
 
   lv_obj_add_flag(right_alarm_card, LV_OBJ_FLAG_CLICKABLE);
   lv_obj_add_event_cb(right_alarm_card, open_alarms_event, LV_EVENT_CLICKED, nullptr);
   lv_obj_add_flag(right_message_card, LV_OBJ_FLAG_CLICKABLE);
   lv_obj_add_event_cb(right_message_card, open_brightness_event, LV_EVENT_CLICKED, nullptr);
 
-  window_panel = plain_obj(stage_card, 78, 12, center_width - 148, 86);
-  window_glow = plain_obj(stage_card, 94, 24, center_width - 180, 56);
-  floor_panel = plain_obj(stage_card, 0, content_height - 48, center_width, 48);
+  wall_panel = plain_obj(stage_card, 0, 0, center_width, height);
+  window_panel = plain_obj(stage_card, 92, 0, 190, 120);
+  window_glow = plain_obj(stage_card, 116, 18, 142, 78);
+  floor_panel = plain_obj(stage_card, 0, height - 50, center_width, 50);
 
-  // Lightweight decorative desk/plant/mascot shapes. They keep the bundled
+  // Lightweight decorative room/plant/mascot shapes. They keep the bundled
   // firmware themeable without shipping branded character artwork.
-  plant_pot = plain_obj(stage_card, 34, content_height - 48, 28, 22);
-  plant_leaf_left = plain_obj(stage_card, 26, content_height - 70, 24, 14);
-  plant_leaf_right = plain_obj(stage_card, 48, content_height - 72, 24, 14);
-  mascot_ear_left = plain_obj(stage_card, center_width - 70, content_height - 78, 16, 44);
-  mascot_ear_right = plain_obj(stage_card, center_width - 44, content_height - 78, 16, 44);
-  mascot_head = plain_obj(stage_card, center_width - 80, content_height - 48, 62, 42);
+  picture_frame = plain_obj(stage_card, 16, 42, 38, 50);
+  picture_inner = plain_obj(picture_frame, 5, 5, 28, 40);
+  pendant_cord = plain_obj(stage_card, 92, 0, 2, 38);
+  pendant_lamp = plain_obj(stage_card, 77, 34, 34, 22);
+  shelf_shadow = plain_obj(stage_card, 0, height - 18, 132, 6);
+  shelf = plain_obj(stage_card, 4, height - 25, 126, 8);
+  house_body = plain_obj(stage_card, 96, height - 55, 30, 28);
+  house_roof = plain_obj(stage_card, 101, height - 66, 20, 18);
+  plant_pot = plain_obj(stage_card, 32, height - 67, 28, 42);
+  plant_leaf_left = plain_obj(stage_card, 19, height - 93, 26, 16);
+  plant_leaf_right = plain_obj(stage_card, 47, height - 96, 28, 16);
+  mascot_ear_left = plain_obj(stage_card, center_width - 56, height - 78, 15, 50);
+  mascot_ear_right = plain_obj(stage_card, center_width - 32, height - 78, 15, 50);
+  mascot_head = plain_obj(stage_card, center_width - 72, height - 48, 68, 43);
   mascot_eye_left = plain_obj(mascot_head, 18, 18, 6, 6);
   mascot_eye_right = plain_obj(mascot_head, 39, 18, 6, 6);
   mascot_mouth = lv_label_create(mascot_head);
@@ -495,13 +547,12 @@ extern "C" void clock_face_create(void)
   month_label = lv_label_create(left_date_card);
   lv_obj_set_style_text_font(month_label, small_font(), 0);
   lv_label_set_text(month_label, "MAY");
-  lv_obj_align(month_label, LV_ALIGN_TOP_MID, 0, 25);
-  lv_obj_add_flag(month_label, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_align(month_label, LV_ALIGN_TOP_MID, 0, 20);
 
   day_label = lv_label_create(left_date_card);
-  lv_obj_set_style_text_font(day_label, large_font(), 0);
+  lv_obj_set_style_text_font(day_label, seconds_font(), 0);
   lv_label_set_text(day_label, "22");
-  lv_obj_align(day_label, LV_ALIGN_BOTTOM_MID, 0, 2);
+  lv_obj_align(day_label, LV_ALIGN_BOTTOM_MID, 0, -1);
 
   calendar_month_label = lv_label_create(calendar_card);
   lv_obj_set_style_text_font(calendar_month_label, small_font(), 0);
@@ -515,7 +566,7 @@ extern "C" void clock_face_create(void)
     lv_label_set_text(calendar_weekday_labels[index], weekdays[index]);
     lv_obj_set_size(calendar_weekday_labels[index], 13, 12);
     lv_obj_set_style_text_align(calendar_weekday_labels[index], LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(calendar_weekday_labels[index], 8 + (index * 13), 21);
+    lv_obj_set_pos(calendar_weekday_labels[index], 8 + (index * 13), 20);
   }
 
   for (uint8_t row = 0; row < 6; ++row) {
@@ -525,7 +576,7 @@ extern "C" void clock_face_create(void)
       lv_obj_set_style_text_font(calendar_day_labels[index], small_font(), 0);
       lv_obj_set_size(calendar_day_labels[index], 13, 12);
       lv_obj_set_style_text_align(calendar_day_labels[index], LV_TEXT_ALIGN_CENTER, 0);
-      lv_obj_set_pos(calendar_day_labels[index], 8 + (column * 13), 34 + (row * 10));
+      lv_obj_set_pos(calendar_day_labels[index], 8 + (column * 13), 31 + (row * 9));
       lv_label_set_text(calendar_day_labels[index], "");
     }
   }
@@ -540,13 +591,13 @@ extern "C" void clock_face_create(void)
   lv_label_set_text(ampm_label, "");
 
   seconds_label = lv_label_create(stage_card);
-  lv_obj_set_style_text_font(seconds_label, body_font(), 0);
+  lv_obj_set_style_text_font(seconds_label, seconds_font(), 0);
   lv_label_set_text(seconds_label, "set");
 
   greeting_label = lv_label_create(stage_card);
   lv_obj_set_style_text_font(greeting_label, body_font(), 0);
-  lv_label_set_text(greeting_label, "* Good morning");
-  lv_obj_align(greeting_label, LV_ALIGN_BOTTOM_MID, -8, -24);
+  lv_label_set_text(greeting_label, "Good morning, Alex");
+  lv_obj_align(greeting_label, LV_ALIGN_BOTTOM_MID, 22, -36);
 
   setup_hint_label = lv_label_create(stage_card);
   lv_obj_set_style_text_font(setup_hint_label, small_font(), 0);
@@ -558,45 +609,64 @@ extern "C" void clock_face_create(void)
     lv_obj_add_flag(setup_hint_label, LV_OBJ_FLAG_HIDDEN);
   }
 
-  sync_dot = plain_obj(right_status_card, right_width - 22, 10, 10, 10);
+  weather_sun = plain_obj(right_status_card, 32, 11, 18, 18);
+  weather_cloud_left = plain_obj(right_status_card, 18, 22, 24, 19);
+  weather_cloud_right = plain_obj(right_status_card, 35, 20, 24, 20);
+  weather_cloud_base = plain_obj(right_status_card, 18, 29, 42, 14);
+
+  sync_dot = plain_obj(right_status_card, right_width - 15, 8, 7, 7);
   lv_obj_set_style_radius(sync_dot, LV_RADIUS_CIRCLE, 0);
   lv_obj_set_style_bg_opa(sync_dot, LV_OPA_COVER, 0);
 
   weather_label = lv_label_create(right_status_card);
-  lv_obj_set_style_text_font(weather_label, small_font(), 0);
-  lv_label_set_text(weather_label, "Weather\n--°");
-  lv_obj_align(weather_label, LV_ALIGN_LEFT_MID, 12, 1);
+  lv_obj_set_style_text_font(weather_label, body_font(), 0);
+  lv_label_set_text(weather_label, "24°C");
+  lv_obj_set_pos(weather_label, 72, 6);
+
+  weather_detail_label = lv_label_create(right_status_card);
+  lv_obj_set_style_text_font(weather_detail_label, small_font(), 0);
+  lv_label_set_text(weather_detail_label, "Cloudy\n26 / 18");
+  lv_obj_set_pos(weather_detail_label, 72, 25);
 
   status_label = lv_label_create(right_status_card);
   lv_obj_set_style_text_font(status_label, small_font(), 0);
   lv_label_set_text(status_label, "time setup");
   lv_obj_align(status_label, LV_ALIGN_BOTTOM_RIGHT, -12, -5);
+  lv_obj_add_flag(status_label, LV_OBJ_FLAG_HIDDEN);
   lv_obj_add_flag(status_label, LV_OBJ_FLAG_CLICKABLE);
   lv_obj_add_event_cb(status_label, open_time_setup_event, LV_EVENT_CLICKED, nullptr);
 
+  focus_leaf = plain_obj(right_alarm_card, 14, 16, 13, 10);
+
   lv_obj_t *alarm_title = lv_label_create(right_alarm_card);
   lv_obj_set_style_text_font(alarm_title, small_font(), 0);
-  lv_label_set_text(alarm_title, "NEXT ALARM");
-  lv_obj_align(alarm_title, LV_ALIGN_TOP_LEFT, 12, 7);
+  lv_label_set_text(alarm_title, "FOCUS MODE");
+  lv_obj_align(alarm_title, LV_ALIGN_TOP_LEFT, 34, 8);
 
   next_alarm_label = lv_label_create(right_alarm_card);
   lv_obj_set_style_text_font(next_alarm_label, small_font(), 0);
-  lv_obj_set_width(next_alarm_label, right_width - 22);
+  lv_obj_set_width(next_alarm_label, right_width - 70);
   lv_label_set_long_mode(next_alarm_label, LV_LABEL_LONG_CLIP);
-  lv_label_set_text(next_alarm_label, "Tap to add alarm");
-  lv_obj_align(next_alarm_label, LV_ALIGN_BOTTOM_LEFT, 12, -7);
+  lv_label_set_text(next_alarm_label, "Deep Work\nEnds 12:00");
+  lv_obj_align(next_alarm_label, LV_ALIGN_BOTTOM_LEFT, 34, -7);
   lv_obj_add_flag(next_alarm_label, LV_OBJ_FLAG_CLICKABLE);
   lv_obj_add_event_cb(next_alarm_label, open_alarms_event, LV_EVENT_CLICKED, nullptr);
 
+  focus_ring = plain_obj(right_alarm_card, right_width - 32, 15, 27, 27);
+  focus_ring_gap = plain_obj(right_alarm_card, right_width - 26, 21, 15, 15);
+
   message_label = lv_label_create(right_message_card);
   lv_obj_set_style_text_font(message_label, small_font(), 0);
-  lv_label_set_text(message_label, "You got this!\nsettings");
-  lv_obj_align(message_label, LV_ALIGN_LEFT_MID, 12, 0);
+  lv_label_set_text(message_label, "You got this!");
+  lv_obj_align(message_label, LV_ALIGN_TOP_LEFT, 10, 10);
+
+  message_heart = plain_obj(right_message_card, 12, 30, 9, 9);
 
   theme_name_label = lv_label_create(right_message_card);
   lv_obj_set_style_text_font(theme_name_label, small_font(), 0);
   lv_label_set_text(theme_name_label, "theme");
-  lv_obj_align(theme_name_label, LV_ALIGN_BOTTOM_RIGHT, -10, -5);
+  lv_obj_align(theme_name_label, LV_ALIGN_BOTTOM_RIGHT, -8, -5);
+  lv_obj_add_flag(theme_name_label, LV_OBJ_FLAG_HIDDEN);
 
   apply_theme_to_static_objects();
   realign_time_details();
