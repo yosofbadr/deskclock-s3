@@ -1,17 +1,18 @@
 #pragma once
 
+#include <stdint.h>
 #include "lvgl.h"
 
 namespace DeskClock {
-namespace NetworkSetupView {
+namespace SystemMenuView {
 
 void create(lv_obj_t *parent, int32_t width, int32_t height, const lv_font_t *font);
 void open();
-void openPasswordEditor();
+void close();
 bool isOpen();
 void moveSelection(int8_t delta);
 void adjustSelected(int8_t delta);
 void activateSelected();
 
-} // namespace NetworkSetupView
+} // namespace SystemMenuView
 } // namespace DeskClock

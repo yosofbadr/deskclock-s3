@@ -12,6 +12,7 @@
 #include "ClockDisplayFormatter.h"
 #include "NetworkSetupView.h"
 #include "SettingsService.h"
+#include "SystemMenuView.h"
 #include "TimeService.h"
 #include "TimeSetupView.h"
 #include "UiWidgets.h"
@@ -51,6 +52,8 @@ constexpr VisualTheme kThemes[] = {
 };
 
 constexpr uint8_t kThemeCount = sizeof(kThemes) / sizeof(kThemes[0]);
+constexpr int32_t kBackgroundInset = 4;
+constexpr int32_t kBackgroundRadius = 18;
 
 lv_obj_t *root_screen = nullptr;
 lv_obj_t *background_image = nullptr;
@@ -591,6 +594,11 @@ void open_time_setup_event(lv_event_t *)
   DeskClock::TimeSetupView::open();
 }
 
+void open_system_menu_event(lv_event_t *)
+{
+  DeskClock::SystemMenuView::open();
+}
+
 void open_brightness_event(lv_event_t *)
 {
   DeskClock::BrightnessSettingsView::open();
@@ -614,9 +622,16 @@ void apply_theme_to_static_objects()
   char asset_path[160];
   background_asset_active = DeskClock::AssetService::backgroundPath(t.name, asset_path, sizeof(asset_path));
   if (background_asset_active && background_image != nullptr) {
+    const int32_t display_width = lv_display_get_horizontal_resolution(nullptr);
+    const int32_t display_height = lv_display_get_vertical_resolution(nullptr);
     lv_image_set_src(background_image, asset_path);
-    lv_image_set_inner_align(background_image, LV_IMAGE_ALIGN_COVER);
-    lv_obj_set_size(background_image, lv_display_get_horizontal_resolution(nullptr), lv_display_get_vertical_resolution(nullptr));
+    lv_image_set_inner_align(background_image, LV_IMAGE_ALIGN_CONTAIN);
+    lv_obj_set_pos(background_image, kBackgroundInset, kBackgroundInset);
+    lv_obj_set_size(background_image, display_width - (kBackgroundInset * 2), display_height - (kBackgroundInset * 2));
+    lv_obj_set_style_radius(background_image, kBackgroundRadius, 0);
+    lv_obj_set_style_clip_corner(background_image, true, 0);
+    lv_obj_set_style_bg_color(background_image, lv_color_hex(t.screen_bg), 0);
+    lv_obj_set_style_bg_opa(background_image, LV_OPA_COVER, 0);
     lv_obj_clear_flag(background_image, LV_OBJ_FLAG_HIDDEN);
   } else {
     set_hidden(background_image, true);
@@ -877,9 +892,11 @@ extern "C" void clock_face_create(void)
 
   background_image = lv_image_create(root_screen);
   lv_obj_remove_style_all(background_image);
-  lv_obj_set_pos(background_image, 0, 0);
-  lv_obj_set_size(background_image, width, height);
-  lv_image_set_inner_align(background_image, LV_IMAGE_ALIGN_COVER);
+  lv_obj_set_pos(background_image, kBackgroundInset, kBackgroundInset);
+  lv_obj_set_size(background_image, width - (kBackgroundInset * 2), height - (kBackgroundInset * 2));
+  lv_image_set_inner_align(background_image, LV_IMAGE_ALIGN_CONTAIN);
+  lv_obj_set_style_radius(background_image, kBackgroundRadius, 0);
+  lv_obj_set_style_clip_corner(background_image, true, 0);
   lv_obj_add_flag(background_image, LV_OBJ_FLAG_HIDDEN);
 
   stage_card = plain_obj(root_screen, 0, 0, width, height);
@@ -1030,7 +1047,7 @@ extern "C" void clock_face_create(void)
   lv_label_set_text(setup_hint_label, "setup time / Wi-Fi");
   lv_obj_align(setup_hint_label, LV_ALIGN_TOP_MID, 0, 7);
   lv_obj_add_flag(setup_hint_label, LV_OBJ_FLAG_CLICKABLE);
-  lv_obj_add_event_cb(setup_hint_label, open_time_setup_event, LV_EVENT_CLICKED, nullptr);
+  lv_obj_add_event_cb(setup_hint_label, open_system_menu_event, LV_EVENT_CLICKED, nullptr);
   if (DeskClock::SettingsService::snapshot().configured) {
     lv_obj_add_flag(setup_hint_label, LV_OBJ_FLAG_HIDDEN);
   }
@@ -1066,7 +1083,7 @@ extern "C" void clock_face_create(void)
   lv_obj_align(status_label, LV_ALIGN_BOTTOM_RIGHT, -12, -5);
   lv_obj_add_flag(status_label, LV_OBJ_FLAG_HIDDEN);
   lv_obj_add_flag(status_label, LV_OBJ_FLAG_CLICKABLE);
-  lv_obj_add_event_cb(status_label, open_time_setup_event, LV_EVENT_CLICKED, nullptr);
+  lv_obj_add_event_cb(status_label, open_system_menu_event, LV_EVENT_CLICKED, nullptr);
 
   focus_leaf = plain_obj(right_alarm_card, 14, 16, 13, 10);
   focus_asset_image = lv_image_create(right_alarm_card);
@@ -1118,7 +1135,8 @@ extern "C" void clock_face_create(void)
   DeskClock::BrightnessSettingsView::create(root_screen, width, height, body_font());
   DeskClock::TimeSetupView::create(root_screen, width, height, body_font());
   DeskClock::NetworkSetupView::create(root_screen, width, height, body_font());
-  DeskClock::AlarmManagerView::create(root_screen, width, height, time_font());
+  DeskClock::AlarmManagerView::create(root_screen, width, height, body_font());
+  DeskClock::SystemMenuView::create(root_screen, width, height, body_font());
   DeskClock::AlarmAlertView::create(root_screen, width, height, time_font());
 
   lv_timer_create(update_clock_from_time_service, 250, nullptr);

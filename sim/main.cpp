@@ -9,6 +9,7 @@
 #include "app/NetworkService.h"
 #include "app/NetworkSetupView.h"
 #include "app/SettingsService.h"
+#include "app/SystemMenuView.h"
 #include "app/TimeService.h"
 #include "app/TimeSetupView.h"
 #include "i2c_bsp.h"
@@ -40,6 +41,7 @@ struct Options {
   std::string screenshot_path;
   std::string open_view;
   std::string fixed_time;
+  std::string nav_actions;
   int theme_index = -1;
   bool dump_layout = false;
   bool reference_scene = false;
@@ -60,6 +62,8 @@ Options parse_options(int argc, char **argv)
       options.fixed_time = argv[++index];
     } else if (std::strcmp(argv[index], "--theme") == 0 && index + 1 < argc) {
       options.theme_index = std::atoi(argv[++index]);
+    } else if (std::strcmp(argv[index], "--nav") == 0 && index + 1 < argc) {
+      options.nav_actions = argv[++index];
     } else if (std::strcmp(argv[index], "--reference-scene") == 0) {
       options.reference_scene = true;
       if (options.fixed_time.empty()) {
@@ -68,7 +72,7 @@ Options parse_options(int argc, char **argv)
     } else if (std::strcmp(argv[index], "--run-ms") == 0 && index + 1 < argc) {
       options.run_ms = static_cast<uint32_t>(std::strtoul(argv[++index], nullptr, 10));
     } else if (std::strcmp(argv[index], "--help") == 0) {
-      std::cout << "Usage: deskclock_sim [--screenshot out.ppm] [--open time|alarms|brightness|network] [--dump-layout] [--fixed-time YYYY-MM-DDTHH:MM:SS] [--theme index] [--reference-scene] [--run-ms milliseconds]\n";
+      std::cout << "Usage: deskclock_sim [--screenshot out.ppm] [--open settings|time|alarms|brightness|network|network-password] [--nav up,down,left,right,tap] [--dump-layout] [--fixed-time YYYY-MM-DDTHH:MM:SS] [--theme index] [--reference-scene] [--run-ms milliseconds]\n";
       std::exit(0);
     }
   }
@@ -168,6 +172,110 @@ std::string object_label(lv_obj_t *obj)
   return "";
 }
 
+bool move_active_text_menu(int8_t delta)
+{
+  if (DeskClock::NetworkSetupView::isOpen()) {
+    DeskClock::NetworkSetupView::moveSelection(delta);
+    return true;
+  }
+  if (DeskClock::AlarmManagerView::isOpen()) {
+    DeskClock::AlarmManagerView::moveSelection(delta);
+    return true;
+  }
+  if (DeskClock::BrightnessSettingsView::isOpen()) {
+    DeskClock::BrightnessSettingsView::moveSelection(delta);
+    return true;
+  }
+  if (DeskClock::TimeSetupView::isOpen()) {
+    DeskClock::TimeSetupView::moveSelection(delta);
+    return true;
+  }
+  if (DeskClock::SystemMenuView::isOpen()) {
+    DeskClock::SystemMenuView::moveSelection(delta);
+    return true;
+  }
+  return false;
+}
+
+bool adjust_active_text_menu(int8_t delta)
+{
+  if (DeskClock::NetworkSetupView::isOpen()) {
+    DeskClock::NetworkSetupView::adjustSelected(delta);
+    return true;
+  }
+  if (DeskClock::AlarmManagerView::isOpen()) {
+    DeskClock::AlarmManagerView::adjustSelected(delta);
+    return true;
+  }
+  if (DeskClock::BrightnessSettingsView::isOpen()) {
+    DeskClock::BrightnessSettingsView::adjustSelected(delta);
+    return true;
+  }
+  if (DeskClock::TimeSetupView::isOpen()) {
+    DeskClock::TimeSetupView::adjustSelected(delta);
+    return true;
+  }
+  if (DeskClock::SystemMenuView::isOpen()) {
+    DeskClock::SystemMenuView::adjustSelected(delta);
+    return true;
+  }
+  return false;
+}
+
+bool activate_active_text_menu()
+{
+  if (DeskClock::NetworkSetupView::isOpen()) {
+    DeskClock::NetworkSetupView::activateSelected();
+    return true;
+  }
+  if (DeskClock::AlarmManagerView::isOpen()) {
+    DeskClock::AlarmManagerView::activateSelected();
+    return true;
+  }
+  if (DeskClock::BrightnessSettingsView::isOpen()) {
+    DeskClock::BrightnessSettingsView::activateSelected();
+    return true;
+  }
+  if (DeskClock::TimeSetupView::isOpen()) {
+    DeskClock::TimeSetupView::activateSelected();
+    return true;
+  }
+  if (DeskClock::SystemMenuView::isOpen()) {
+    DeskClock::SystemMenuView::activateSelected();
+    return true;
+  }
+  return false;
+}
+
+void apply_nav_action(const std::string &action)
+{
+  if (action == "up") {
+    move_active_text_menu(-1);
+  } else if (action == "down") {
+    move_active_text_menu(1);
+  } else if (action == "left") {
+    adjust_active_text_menu(-1);
+  } else if (action == "right") {
+    adjust_active_text_menu(1);
+  } else if (action == "tap" || action == "enter") {
+    activate_active_text_menu();
+  }
+}
+
+void apply_nav_actions(const std::string &actions)
+{
+  size_t start = 0;
+  while (start < actions.size()) {
+    size_t end = actions.find(',', start);
+    if (end == std::string::npos) {
+      end = actions.size();
+    }
+    apply_nav_action(actions.substr(start, end - start));
+    pump_for(80);
+    start = end + 1;
+  }
+}
+
 void dump_layout(lv_obj_t *obj, int depth = 0)
 {
   if (lv_obj_has_flag(obj, LV_OBJ_FLAG_HIDDEN)) {
@@ -250,7 +358,9 @@ int main(int argc, char **argv)
   lv_sdl_keyboard_create();
 
   clock_face_create();
-  if (options.open_view == "time") {
+  if (options.open_view == "settings") {
+    DeskClock::SystemMenuView::open();
+  } else if (options.open_view == "time") {
     DeskClock::TimeSetupView::open();
   } else if (options.open_view == "alarms") {
     DeskClock::AlarmManagerView::open();
@@ -258,9 +368,14 @@ int main(int argc, char **argv)
     DeskClock::BrightnessSettingsView::open();
   } else if (options.open_view == "network") {
     DeskClock::NetworkSetupView::open();
+  } else if (options.open_view == "network-password") {
+    DeskClock::NetworkSetupView::openPasswordEditor();
   } else if (!options.open_view.empty()) {
     std::cerr << "Unknown --open view: " << options.open_view << "\n";
     return 2;
+  }
+  if (!options.nav_actions.empty()) {
+    apply_nav_actions(options.nav_actions);
   }
   pump_for(options.run_ms == 0 ? 500 : options.run_ms);
 

@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "GestureTextMenu.h"
 #include "NetworkSetupView.h"
 #include "SettingsService.h"
 #include "TimeService.h"
@@ -12,11 +13,31 @@
 namespace DeskClock {
 namespace {
 
+enum class Action : uintptr_t {
+  Back = 0,
+  Save,
+  Year,
+  Month,
+  Day,
+  Hour,
+  Minute,
+  Format,
+  Timezone,
+};
+
+constexpr uint8_t kRowCount = 9;
+constexpr uint8_t kVisibleRows = 7;
+
 lv_obj_t *panel = nullptr;
-lv_obj_t *value_label = nullptr;
-lv_obj_t *date_hint_label = nullptr;
+const lv_font_t *view_font = nullptr;
+int32_t panel_width = 0;
 DateTime editing_time;
 bool use_24_hour_time = true;
+uint8_t selected_index = 2;
+lv_obj_t *rows[kVisibleRows] = {};
+GestureTextMenu::TouchState touch_state;
+
+void refresh();
 
 void savePreferences()
 {
@@ -25,55 +46,6 @@ void savePreferences()
     preferences.putBool("time24", use_24_hour_time);
     preferences.end();
   }
-}
-
-void refresh()
-{
-  if (value_label == nullptr) {
-    return;
-  }
-  char time_text[12];
-  TimeSetupView::formatTime(time_text, sizeof(time_text), editing_time.hour, editing_time.minute);
-  SettingsSnapshot settings = SettingsService::snapshot();
-  char buffer[96];
-  snprintf(buffer,
-           sizeof(buffer),
-           "%04u-%02u-%02u  %s  %s  TZ %s",
-           editing_time.year,
-           editing_time.month,
-           editing_time.day,
-           time_text,
-           use_24_hour_time ? "24h" : "12h",
-           settings.timezone_label);
-  lv_label_set_text(value_label, buffer);
-}
-
-void close_event(lv_event_t *)
-{
-  lv_obj_add_flag(panel, LV_OBJ_FLAG_HIDDEN);
-}
-
-void save_event(lv_event_t *)
-{
-  editing_time.second = 0;
-  if (TimeService::setManualTime(editing_time)) {
-    SettingsService::setConfigured(true);
-  }
-  savePreferences();
-  lv_obj_add_flag(panel, LV_OBJ_FLAG_HIDDEN);
-}
-
-void toggle_format_event(lv_event_t *)
-{
-  use_24_hour_time = !use_24_hour_time;
-  savePreferences();
-  refresh();
-}
-
-void cycle_timezone_event(lv_event_t *)
-{
-  SettingsService::cycleTimezone();
-  refresh();
 }
 
 uint8_t days_in_month(uint16_t year, uint8_t month)
@@ -86,6 +58,43 @@ uint8_t days_in_month(uint16_t year, uint8_t month)
     return 29;
   }
   return days[month - 1];
+}
+
+void clamp_day_to_month()
+{
+  const uint8_t month_days = days_in_month(editing_time.year, editing_time.month);
+  if (editing_time.day > month_days) {
+    editing_time.day = month_days;
+  }
+}
+
+uint8_t wrap_value(uint8_t value, int8_t delta, uint8_t min_value, uint8_t max_value, uint8_t step = 1)
+{
+  if (value < min_value || value > max_value) {
+    value = min_value;
+  }
+  const int16_t next = static_cast<int16_t>(value) + static_cast<int16_t>(delta) * step;
+  if (next > max_value) {
+    return min_value;
+  }
+  if (next < min_value) {
+    return max_value;
+  }
+  return static_cast<uint8_t>(next);
+}
+
+uint16_t wrap_year(uint16_t year, int8_t delta)
+{
+  if (year < 2024 || year > 2099) {
+    year = 2026;
+  }
+  int16_t next = static_cast<int16_t>(year) + delta;
+  if (next > 2099) {
+    next = 2024;
+  } else if (next < 2024) {
+    next = 2099;
+  }
+  return static_cast<uint16_t>(next);
 }
 
 void adjust_date_by_days(int8_t delta)
@@ -107,6 +116,9 @@ void adjust_date_by_days(int8_t delta)
       if (editing_time.month > 12) {
         editing_time.month = 1;
         editing_time.year++;
+        if (editing_time.year > 2099) {
+          editing_time.year = 2024;
+        }
       }
     }
     delta--;
@@ -115,78 +127,216 @@ void adjust_date_by_days(int8_t delta)
   while (delta < 0) {
     if (editing_time.day > 1) {
       editing_time.day--;
-    } else if (editing_time.month > 1) {
-      editing_time.month--;
+    } else {
+      if (editing_time.month > 1) {
+        editing_time.month--;
+      } else {
+        editing_time.month = 12;
+        editing_time.year = editing_time.year <= 2024 ? 2099 : static_cast<uint16_t>(editing_time.year - 1U);
+      }
       editing_time.day = days_in_month(editing_time.year, editing_time.month);
-    } else if (editing_time.year > 2024) {
-      editing_time.year--;
-      editing_time.month = 12;
-      editing_time.day = 31;
     }
     delta++;
   }
 }
 
-void adjust_time_event(lv_event_t *event)
+void save_and_close()
 {
-  const int32_t delta = static_cast<int32_t>(reinterpret_cast<intptr_t>(lv_event_get_user_data(event)));
-  int32_t total = static_cast<int32_t>(editing_time.hour) * 60 + editing_time.minute + delta;
-  while (total < 0) {
-    total += 24 * 60;
+  editing_time.second = 0;
+  editing_time.valid = true;
+  if (TimeService::setManualTime(editing_time)) {
+    SettingsService::setConfigured(true);
   }
-  total %= 24 * 60;
-  editing_time.hour = static_cast<uint8_t>(total / 60);
-  editing_time.minute = static_cast<uint8_t>(total % 60);
+  savePreferences();
+  lv_obj_add_flag(panel, LV_OBJ_FLAG_HIDDEN);
+}
+
+void adjust_timezone(int8_t delta)
+{
+  const SettingsSnapshot settings = SettingsService::snapshot();
+  const uint8_t count = SettingsService::timezoneCount();
+  if (count == 0) {
+    return;
+  }
+  SettingsService::setTimezoneIndex(GestureTextMenu::wrapIndex(settings.timezone_index, delta, count));
+}
+
+void adjust_action(Action action, int8_t delta)
+{
+  switch (action) {
+  case Action::Back:
+  case Action::Save:
+    return;
+  case Action::Year:
+    editing_time.year = wrap_year(editing_time.year, delta);
+    clamp_day_to_month();
+    break;
+  case Action::Month:
+    editing_time.month = wrap_value(editing_time.month, delta, 1, 12);
+    clamp_day_to_month();
+    break;
+  case Action::Day:
+    adjust_date_by_days(delta);
+    break;
+  case Action::Hour:
+    editing_time.hour = wrap_value(editing_time.hour, delta, 0, 23);
+    break;
+  case Action::Minute:
+    editing_time.minute = wrap_value(editing_time.minute, delta, 0, 55, 5);
+    break;
+  case Action::Format:
+    use_24_hour_time = !use_24_hour_time;
+    savePreferences();
+    break;
+  case Action::Timezone:
+    adjust_timezone(delta);
+    break;
+  }
   refresh();
 }
 
-void adjust_date_event(lv_event_t *event)
+Action action_for_index(uint8_t index)
 {
-  const int8_t delta = static_cast<int8_t>(reinterpret_cast<intptr_t>(lv_event_get_user_data(event)));
-  adjust_date_by_days(delta);
-  refresh();
+  return static_cast<Action>(index);
 }
 
-void clamp_day_to_month()
+void activate_action(Action action)
 {
-  const uint8_t month_days = days_in_month(editing_time.year, editing_time.month);
-  if (editing_time.day > month_days) {
-    editing_time.day = month_days;
+  switch (action) {
+  case Action::Back:
+    lv_obj_add_flag(panel, LV_OBJ_FLAG_HIDDEN);
+    return;
+  case Action::Save:
+    save_and_close();
+    return;
+  case Action::Year:
+  case Action::Month:
+  case Action::Day:
+  case Action::Hour:
+  case Action::Minute:
+  case Action::Format:
+  case Action::Timezone:
+    adjust_action(action, 1);
+    return;
   }
 }
 
-void adjust_month_event(lv_event_t *event)
+void format_row(uint8_t index, char *row, size_t size)
 {
-  const int8_t delta = static_cast<int8_t>(reinterpret_cast<intptr_t>(lv_event_get_user_data(event)));
-  int16_t month = static_cast<int16_t>(editing_time.month) + delta;
-  while (month < 1) {
-    month += 12;
-    if (editing_time.year > 2024) {
-      editing_time.year--;
+  SettingsSnapshot settings = SettingsService::snapshot();
+  char formatted_time[12];
+  TimeSetupView::formatTime(formatted_time, sizeof(formatted_time), editing_time.hour, editing_time.minute);
+
+  switch (action_for_index(index)) {
+  case Action::Back:
+    snprintf(row, size, "Back");
+    break;
+  case Action::Save:
+    snprintf(row, size, "Save   %04u-%02u-%02u %s", editing_time.year, editing_time.month, editing_time.day, formatted_time);
+    break;
+  case Action::Year:
+    snprintf(row, size, "Year        %04u", editing_time.year);
+    break;
+  case Action::Month:
+    snprintf(row, size, "Month       %02u", editing_time.month);
+    break;
+  case Action::Day:
+    snprintf(row, size, "Day         %02u", editing_time.day);
+    break;
+  case Action::Hour:
+    snprintf(row, size, "Hour        %02u", editing_time.hour);
+    break;
+  case Action::Minute:
+    snprintf(row, size, "Minute      %02u", editing_time.minute);
+    break;
+  case Action::Format:
+    snprintf(row, size, "Format      %s", use_24_hour_time ? "24h" : "12h");
+    break;
+  case Action::Timezone:
+    snprintf(row, size, "Timezone    %s", settings.timezone_label);
+    break;
+  }
+}
+
+void draw_title()
+{
+  lv_obj_t *title = lv_label_create(panel);
+  lv_obj_set_style_text_font(title, view_font, 0);
+  UiWidgets::setTextColor(title, 0x0F172A);
+  lv_label_set_text(title, "Time setup");
+  lv_obj_align(title, LV_ALIGN_TOP_LEFT, 12, 7);
+
+  lv_obj_t *hint = lv_label_create(panel);
+  lv_obj_set_style_text_font(hint, LV_FONT_DEFAULT, 0);
+  UiWidgets::setTextColor(hint, 0x64748B);
+  lv_label_set_text(hint, "up/down select  left/right adjust  tap save/back");
+  lv_obj_align(hint, LV_ALIGN_TOP_RIGHT, -12, 11);
+}
+
+void set_row(uint8_t slot, uint8_t index, bool selected)
+{
+  char value[96];
+  char line[112];
+  format_row(index, value, sizeof(value));
+  snprintf(line, sizeof(line), "%s %.96s", selected ? ">" : " ", value);
+  lv_label_set_text(rows[slot], line);
+  lv_obj_set_style_text_color(rows[slot], lv_color_hex(selected ? 0xFFFFFF : 0x0F172A), 0);
+  lv_obj_set_style_bg_color(rows[slot], lv_color_hex(selected ? 0x334155 : 0xFFFFFF), 0);
+  lv_obj_set_style_bg_opa(rows[slot], selected ? LV_OPA_90 : LV_OPA_TRANSP, 0);
+  lv_obj_set_style_radius(rows[slot], 4, 0);
+  lv_obj_set_style_pad_left(rows[slot], 4, 0);
+}
+
+void refresh()
+{
+  if (panel == nullptr) {
+    return;
+  }
+  lv_obj_clean(panel);
+  draw_title();
+
+  if (selected_index >= kRowCount) {
+    selected_index = 2;
+  }
+  const uint8_t first = GestureTextMenu::firstVisibleIndex(selected_index, kRowCount, kVisibleRows);
+  for (uint8_t slot = 0; slot < kVisibleRows; ++slot) {
+    const uint8_t index = static_cast<uint8_t>(first + slot);
+    rows[slot] = lv_label_create(panel);
+    lv_obj_set_style_text_font(rows[slot], LV_FONT_DEFAULT, 0);
+    lv_obj_set_width(rows[slot], panel_width - 24);
+    lv_obj_set_height(rows[slot], 15);
+    lv_label_set_long_mode(rows[slot], LV_LABEL_LONG_CLIP);
+    lv_obj_set_pos(rows[slot], 12, 30 + static_cast<int32_t>(slot) * 16);
+    if (index < kRowCount) {
+      set_row(slot, index, index == selected_index);
+    } else {
+      lv_obj_add_flag(rows[slot], LV_OBJ_FLAG_HIDDEN);
     }
   }
-  while (month > 12) {
-    month -= 12;
-    editing_time.year++;
-  }
-  editing_time.month = static_cast<uint8_t>(month);
-  clamp_day_to_month();
-  refresh();
 }
 
-void adjust_year_event(lv_event_t *event)
+void handle_input(GestureTextMenu::Input input, void *)
 {
-  const int16_t delta = static_cast<int16_t>(reinterpret_cast<intptr_t>(lv_event_get_user_data(event)));
-  int32_t year = static_cast<int32_t>(editing_time.year) + delta;
-  if (year < 2024) {
-    year = 2024;
+  switch (input) {
+  case GestureTextMenu::Input::Up:
+    TimeSetupView::moveSelection(-1);
+    break;
+  case GestureTextMenu::Input::Down:
+    TimeSetupView::moveSelection(1);
+    break;
+  case GestureTextMenu::Input::Left:
+    TimeSetupView::adjustSelected(-1);
+    break;
+  case GestureTextMenu::Input::Right:
+    TimeSetupView::adjustSelected(1);
+    break;
+  case GestureTextMenu::Input::Tap:
+    TimeSetupView::activateSelected();
+    break;
+  case GestureTextMenu::Input::None:
+  default:
+    break;
   }
-  if (year > 2099) {
-    year = 2099;
-  }
-  editing_time.year = static_cast<uint16_t>(year);
-  clamp_day_to_month();
-  refresh();
 }
 
 } // namespace
@@ -225,79 +375,11 @@ void formatTime(char *buffer, size_t size, uint8_t hour, uint8_t minute)
 
 void create(lv_obj_t *parent, int32_t width, int32_t height, const lv_font_t *font)
 {
+  view_font = font != nullptr ? font : LV_FONT_DEFAULT;
+  panel_width = width - 28;
   panel = UiWidgets::modalPanel(parent, width, height);
-
-  lv_obj_t *title = lv_label_create(panel);
-  lv_obj_set_style_text_font(title, font, 0);
-  UiWidgets::setTextColor(title, 0x1F2933);
-  lv_label_set_text(title, "Time setup");
-  lv_obj_align(title, LV_ALIGN_TOP_LEFT, 14, 8);
-
-  value_label = lv_label_create(panel);
-  lv_obj_set_style_text_font(value_label, font, 0);
-  lv_obj_set_style_text_align(value_label, LV_TEXT_ALIGN_CENTER, 0);
-  lv_obj_set_width(value_label, width - 190);
-  UiWidgets::setTextColor(value_label, 0x1F2933);
-  lv_label_set_text(value_label, "---- -- --");
-  lv_obj_align(value_label, LV_ALIGN_TOP_MID, 30, 8);
-
-  date_hint_label = lv_label_create(panel);
-  UiWidgets::setTextColor(date_hint_label, 0x52616F);
-  lv_label_set_text(date_hint_label, "Date");
-  lv_obj_align(date_hint_label, LV_ALIGN_TOP_LEFT, 14, 42);
-
-  lv_obj_t *year_down = UiWidgets::button(panel, "Y-", 42, 26);
-  lv_obj_align(year_down, LV_ALIGN_TOP_MID, -140, 36);
-  lv_obj_add_event_cb(year_down, adjust_year_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(-1)));
-  lv_obj_t *month_down = UiWidgets::button(panel, "M-", 42, 26);
-  lv_obj_align(month_down, LV_ALIGN_TOP_MID, -92, 36);
-  lv_obj_add_event_cb(month_down, adjust_month_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(-1)));
-  lv_obj_t *date_down = UiWidgets::button(panel, "D-", 42, 26);
-  lv_obj_align(date_down, LV_ALIGN_TOP_MID, -44, 36);
-  lv_obj_add_event_cb(date_down, adjust_date_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(-1)));
-  lv_obj_t *date_up = UiWidgets::button(panel, "D+", 42, 26);
-  lv_obj_align(date_up, LV_ALIGN_TOP_MID, 44, 36);
-  lv_obj_add_event_cb(date_up, adjust_date_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(1)));
-  lv_obj_t *month_up = UiWidgets::button(panel, "M+", 42, 26);
-  lv_obj_align(month_up, LV_ALIGN_TOP_MID, 92, 36);
-  lv_obj_add_event_cb(month_up, adjust_month_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(1)));
-  lv_obj_t *year_up = UiWidgets::button(panel, "Y+", 42, 26);
-  lv_obj_align(year_up, LV_ALIGN_TOP_MID, 140, 36);
-  lv_obj_add_event_cb(year_up, adjust_year_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(1)));
-
-  lv_obj_t *time_hint = lv_label_create(panel);
-  UiWidgets::setTextColor(time_hint, 0x52616F);
-  lv_label_set_text(time_hint, "Time");
-  lv_obj_align(time_hint, LV_ALIGN_TOP_LEFT, 14, 76);
-
-  lv_obj_t *minus_hour = UiWidgets::button(panel, "-1h", 58, 28);
-  lv_obj_align(minus_hour, LV_ALIGN_TOP_MID, -132, 70);
-  lv_obj_add_event_cb(minus_hour, adjust_time_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(-60)));
-  lv_obj_t *minus_minute = UiWidgets::button(panel, "-1m", 58, 28);
-  lv_obj_align(minus_minute, LV_ALIGN_TOP_MID, -68, 70);
-  lv_obj_add_event_cb(minus_minute, adjust_time_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(-1)));
-  lv_obj_t *plus_minute = UiWidgets::button(panel, "+1m", 58, 28);
-  lv_obj_align(plus_minute, LV_ALIGN_TOP_MID, 68, 70);
-  lv_obj_add_event_cb(plus_minute, adjust_time_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(1)));
-  lv_obj_t *plus_hour = UiWidgets::button(panel, "+1h", 58, 28);
-  lv_obj_align(plus_hour, LV_ALIGN_TOP_MID, 132, 70);
-  lv_obj_add_event_cb(plus_hour, adjust_time_event, LV_EVENT_CLICKED, reinterpret_cast<void *>(static_cast<intptr_t>(60)));
-
-  lv_obj_t *format_button = UiWidgets::button(panel, "12/24h", 76, 30);
-  lv_obj_align(format_button, LV_ALIGN_BOTTOM_LEFT, 14, -2);
-  lv_obj_add_event_cb(format_button, toggle_format_event, LV_EVENT_CLICKED, nullptr);
-  lv_obj_t *timezone_button = UiWidgets::button(panel, "TZ", 46, 30);
-  lv_obj_align(timezone_button, LV_ALIGN_BOTTOM_LEFT, 96, -2);
-  lv_obj_add_event_cb(timezone_button, cycle_timezone_event, LV_EVENT_CLICKED, nullptr);
-  lv_obj_t *wifi_button = UiWidgets::button(panel, "Wi-Fi", 58, 30);
-  lv_obj_align(wifi_button, LV_ALIGN_BOTTOM_LEFT, 148, -2);
-  lv_obj_add_event_cb(wifi_button, [](lv_event_t *) { NetworkSetupView::open(); }, LV_EVENT_CLICKED, nullptr);
-  lv_obj_t *save_button = UiWidgets::button(panel, "Set time", 92, 30);
-  lv_obj_align(save_button, LV_ALIGN_BOTTOM_MID, 36, -2);
-  lv_obj_add_event_cb(save_button, save_event, LV_EVENT_CLICKED, nullptr);
-  lv_obj_t *close_button = UiWidgets::button(panel, "Close", 74, 30);
-  lv_obj_align(close_button, LV_ALIGN_BOTTOM_RIGHT, -14, -2);
-  lv_obj_add_event_cb(close_button, close_event, LV_EVENT_CLICKED, nullptr);
+  GestureTextMenu::attach(panel, &touch_state, handle_input, nullptr);
+  refresh();
 }
 
 void open()
@@ -314,9 +396,41 @@ void open()
     editing_time.second = 0;
     editing_time.valid = true;
   }
+  selected_index = 2;
+  GestureTextMenu::reset(&touch_state);
   refresh();
   lv_obj_clear_flag(panel, LV_OBJ_FLAG_HIDDEN);
   lv_obj_move_foreground(panel);
+}
+
+bool isOpen()
+{
+  return panel != nullptr && !lv_obj_has_flag(panel, LV_OBJ_FLAG_HIDDEN);
+}
+
+void moveSelection(int8_t delta)
+{
+  if (!isOpen()) {
+    return;
+  }
+  selected_index = GestureTextMenu::wrapIndex(selected_index, delta, kRowCount);
+  refresh();
+}
+
+void adjustSelected(int8_t delta)
+{
+  if (!isOpen()) {
+    return;
+  }
+  adjust_action(action_for_index(selected_index), delta);
+}
+
+void activateSelected()
+{
+  if (!isOpen()) {
+    return;
+  }
+  activate_action(action_for_index(selected_index));
 }
 
 } // namespace TimeSetupView

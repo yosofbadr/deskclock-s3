@@ -198,59 +198,147 @@ void loop()
 
 #else
 
+#include "app/AlarmManagerView.h"
 #include "app/AlarmService.h"
 #include "app/AlarmToneService.h"
 #include "app/AssetService.h"
 #include "app/BrightnessService.h"
+#include "app/BrightnessSettingsView.h"
 #include "app/NetworkService.h"
+#include "app/NetworkSetupView.h"
 #include "app/SettingsService.h"
+#include "app/SystemMenuView.h"
 #include "app/TimeService.h"
 #include "app/TimeSetupView.h"
+#include "esp_system.h"
 #include "lvgl_port.h"
 #include "src/lcd_bl_bsp/lcd_bl_pwm_bsp.h"
 
 namespace {
 constexpr int kBootButtonPin = 0;
-constexpr uint32_t kBootDebounceMs = 50;
+constexpr int kPowerButtonPin = 16;
+constexpr uint32_t kButtonDebounceMs = 50;
 constexpr uint32_t kBootSettingsLongPressMs = 1200;
+constexpr uint32_t kPowerOffLongPressMs = 1600;
 
-bool boot_button_was_down = false;
-uint32_t last_boot_button_change_ms = 0;
-uint32_t boot_button_down_since_ms = 0;
-bool boot_long_press_handled = false;
+struct ButtonState {
+  int pin = -1;
+  const char *name = "button";
+  bool down = false;
+  bool long_handled = false;
+  uint32_t last_change_ms = 0;
+  uint32_t down_since_ms = 0;
+};
 
-uint32_t boot_press_duration_ms(uint32_t now_ms)
+ButtonState boot_button{kBootButtonPin, "BOOT"};
+ButtonState power_button{kPowerButtonPin, "PWR"};
+
+uint32_t button_press_duration_ms(const ButtonState &button, uint32_t now_ms)
 {
-  return now_ms >= boot_button_down_since_ms ? now_ms - boot_button_down_since_ms : 0;
+  return now_ms >= button.down_since_ms ? now_ms - button.down_since_ms : 0;
 }
 
-void handle_boot_button()
+void cycle_reset_brightness()
 {
-  const bool down = digitalRead(kBootButtonPin) == LOW;
-  const uint32_t now_ms = millis();
+  const uint8_t next = DeskClock::BrightnessService::cyclePreset(1);
+  Serial.printf("RESET: brightness preset -> %u (%u levels)\n", next, DeskClock::BrightnessService::presetCount());
+}
 
-  if (down != boot_button_was_down && now_ms - last_boot_button_change_ms > kBootDebounceMs) {
-    boot_button_was_down = down;
-    last_boot_button_change_ms = now_ms;
+bool should_cycle_brightness_for_reset(esp_reset_reason_t reason, bool pwr_held_at_boot)
+{
+  if (reason == ESP_RST_EXT || reason == ESP_RST_USB) {
+    return true;
+  }
+  // On ESP32 boards, the RESET/EN button can be reported as POWERON. Avoid
+  // cycling brightness when the board is being intentionally started by PWR.
+  return reason == ESP_RST_POWERON && !pwr_held_at_boot;
+}
+
+bool activate_active_text_menu()
+{
+  if (DeskClock::NetworkSetupView::isOpen()) {
+    DeskClock::NetworkSetupView::activateSelected();
+    return true;
+  }
+  if (DeskClock::AlarmManagerView::isOpen()) {
+    DeskClock::AlarmManagerView::activateSelected();
+    return true;
+  }
+  if (DeskClock::BrightnessSettingsView::isOpen()) {
+    DeskClock::BrightnessSettingsView::activateSelected();
+    return true;
+  }
+  if (DeskClock::TimeSetupView::isOpen()) {
+    DeskClock::TimeSetupView::activateSelected();
+    return true;
+  }
+  if (DeskClock::SystemMenuView::isOpen()) {
+    DeskClock::SystemMenuView::activateSelected();
+    return true;
+  }
+  return false;
+}
+
+void handle_boot_short_press()
+{
+  if (!activate_active_text_menu()) {
+    Serial.println("BOOT: opening settings menu");
+    DeskClock::SystemMenuView::open();
+  }
+}
+
+void handle_power_short_press()
+{
+  Serial.println("PWR: short press ignored; hold to power off");
+}
+
+void update_button(ButtonState &button, uint32_t now_ms)
+{
+  const bool down = digitalRead(button.pin) == LOW;
+  if (down != button.down && now_ms - button.last_change_ms > kButtonDebounceMs) {
+    button.down = down;
+    button.last_change_ms = now_ms;
     if (down) {
-      boot_button_down_since_ms = now_ms;
-      boot_long_press_handled = false;
-      Serial.println("BOOT: pressed");
-      if (DeskClock::AlarmService::activeAlert().active) {
+      button.down_since_ms = now_ms;
+      button.long_handled = false;
+      Serial.printf("%s: pressed\n", button.name);
+      if (button.pin == kBootButtonPin && DeskClock::AlarmService::activeAlert().active) {
         Serial.println("BOOT: dismissing active alarm");
         DeskClock::AlarmService::dismissActiveAlert();
-        boot_long_press_handled = true;
+        button.long_handled = true;
       }
     } else {
-      Serial.printf("BOOT: released after %lu ms\n", static_cast<unsigned long>(boot_press_duration_ms(now_ms)));
+      const uint32_t duration = button_press_duration_ms(button, now_ms);
+      Serial.printf("%s: released after %lu ms\n", button.name, static_cast<unsigned long>(duration));
+      if (!button.long_handled) {
+        if (button.pin == kBootButtonPin) {
+          handle_boot_short_press();
+        } else if (button.pin == kPowerButtonPin) {
+          handle_power_short_press();
+        }
+      }
     }
   }
 
-  if (boot_button_was_down && !boot_long_press_handled && now_ms - boot_button_down_since_ms >= kBootSettingsLongPressMs) {
-    Serial.println("BOOT: long press opening setup");
-    DeskClock::TimeSetupView::open();
-    boot_long_press_handled = true;
+  if (button.down && !button.long_handled) {
+    const uint32_t duration = button_press_duration_ms(button, now_ms);
+    if (button.pin == kBootButtonPin && duration >= kBootSettingsLongPressMs) {
+      Serial.println("BOOT: long press opening settings menu");
+      DeskClock::SystemMenuView::open();
+      button.long_handled = true;
+    } else if (button.pin == kPowerButtonPin && duration >= kPowerOffLongPressMs) {
+      Serial.println("PWR: long press releasing power hold");
+      DeskClock::BoardPowerService::releaseBatteryPowerHold();
+      button.long_handled = true;
+    }
   }
+}
+
+void handle_board_buttons()
+{
+  const uint32_t now_ms = millis();
+  update_button(boot_button, now_ms);
+  update_button(power_button, now_ms);
 }
 } // namespace
 
@@ -259,8 +347,13 @@ void setup()
   delay(50);
   Serial.begin(115200);
   delay(50);
+  const esp_reset_reason_t reset_reason = esp_reset_reason();
+  Serial.printf("Reset reason: %d\n", static_cast<int>(reset_reason));
 
   pinMode(kBootButtonPin, INPUT_PULLUP);
+  pinMode(kPowerButtonPin, INPUT_PULLUP);
+  const bool pwr_held_at_boot = digitalRead(kPowerButtonPin) == LOW;
+  Serial.printf("PWR held at boot: %u\n", pwr_held_at_boot ? 1U : 0U);
 
   i2c_master_Init();
   DeskClock::BoardPowerService::begin();
@@ -278,6 +371,9 @@ void setup()
   lvgl_port_init();
   lcd_bl_pwm_bsp_init(LCD_PWM_MODE_255);
   DeskClock::BrightnessService::begin();
+  if (should_cycle_brightness_for_reset(reset_reason, pwr_held_at_boot)) {
+    cycle_reset_brightness();
+  }
 
   Serial.println("DeskClock S3: display shell started");
 }
@@ -290,7 +386,7 @@ void loop()
   DeskClock::AlarmToneService::loop(DeskClock::AlarmService::activeAlert());
   DeskClock::BrightnessService::loop(snapshot.now);
   DeskClock::NetworkService::loop();
-  handle_boot_button();
+  handle_board_buttons();
   delay(50);
 }
 

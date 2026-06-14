@@ -15,5 +15,9 @@ bool batteryPowerHoldEnabled();
 // resetting the power-hold pin back to input mode.
 bool enableAudioPower();
 
+// Release the SYS_EN hold. On battery power this lets the board shut down after
+// the user releases PWR; on USB power the board may stay powered by USB.
+bool releaseBatteryPowerHold();
+
 } // namespace BoardPowerService
 } // namespace DeskClock

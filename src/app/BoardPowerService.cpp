@@ -106,5 +106,18 @@ bool enableAudioPower()
   return true;
 }
 
+bool releaseBatteryPowerHold()
+{
+  if (!power_hold_enabled && !begin()) {
+    return false;
+  }
+  if (!set_expander_output(kTca9554SysEnablePin, 0, "SYS_EN")) {
+    return false;
+  }
+  power_hold_enabled = false;
+  Serial.println("BoardPowerService: battery power hold released");
+  return true;
+}
+
 } // namespace BoardPowerService
 } // namespace DeskClock
