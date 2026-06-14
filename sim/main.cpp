@@ -11,6 +11,7 @@
 #include "app/TimeService.h"
 #include "app/TimeSetupView.h"
 #include "i2c_bsp.h"
+#include "Preferences.h"
 #include "lvgl.h"
 #include "src/drivers/sdl/lv_sdl_keyboard.h"
 #include "src/drivers/sdl/lv_sdl_mouse.h"
@@ -19,13 +20,16 @@
 #include "src/widgets/button/lv_button.h"
 #include "src/widgets/label/lv_label.h"
 
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <fstream>
 #include <iostream>
 #include <string>
 
 extern "C" void clock_face_create(void);
+extern "C" void deskclock_sim_set_epoch(time_t epoch);
 
 namespace {
 constexpr int kDisplayWidth = 640;
@@ -34,7 +38,9 @@ constexpr int kDisplayHeight = 172;
 struct Options {
   std::string screenshot_path;
   std::string open_view;
+  std::string fixed_time;
   bool dump_layout = false;
+  bool reference_scene = false;
   uint32_t run_ms = 0;
 };
 
@@ -48,22 +54,72 @@ Options parse_options(int argc, char **argv)
       options.open_view = argv[++index];
     } else if (std::strcmp(argv[index], "--dump-layout") == 0) {
       options.dump_layout = true;
+    } else if (std::strcmp(argv[index], "--fixed-time") == 0 && index + 1 < argc) {
+      options.fixed_time = argv[++index];
+    } else if (std::strcmp(argv[index], "--reference-scene") == 0) {
+      options.reference_scene = true;
+      if (options.fixed_time.empty()) {
+        options.fixed_time = "2024-05-22T10:24:36";
+      }
     } else if (std::strcmp(argv[index], "--run-ms") == 0 && index + 1 < argc) {
       options.run_ms = static_cast<uint32_t>(std::strtoul(argv[++index], nullptr, 10));
     } else if (std::strcmp(argv[index], "--help") == 0) {
-      std::cout << "Usage: deskclock_sim [--screenshot out.ppm] [--open time|alarms|brightness|network] [--dump-layout] [--run-ms milliseconds]\n";
+      std::cout << "Usage: deskclock_sim [--screenshot out.ppm] [--open time|alarms|brightness|network] [--dump-layout] [--fixed-time YYYY-MM-DDTHH:MM:SS] [--reference-scene] [--run-ms milliseconds]\n";
       std::exit(0);
     }
   }
   return options;
 }
 
-void initialize_app()
+bool parse_fixed_time(const std::string &value, time_t &epoch)
+{
+  if (value.empty()) {
+    return false;
+  }
+
+  std::tm tm = {};
+  char separator = 'T';
+  if (std::sscanf(value.c_str(), "%d-%d-%d%c%d:%d:%d", &tm.tm_year, &tm.tm_mon, &tm.tm_mday, &separator, &tm.tm_hour, &tm.tm_min, &tm.tm_sec) != 7) {
+    return false;
+  }
+  tm.tm_year -= 1900;
+  tm.tm_mon -= 1;
+#if defined(__APPLE__) || defined(__linux__)
+  epoch = timegm(&tm);
+#else
+  epoch = std::mktime(&tm);
+#endif
+  return epoch != static_cast<time_t>(-1);
+}
+
+void seed_reference_preferences()
+{
+  Preferences preferences;
+  if (preferences.begin("deskclock", false)) {
+    preferences.putBool("configured", true);
+    preferences.putBool("time24", false);
+    preferences.putUChar("theme", 0);
+    preferences.end();
+  }
+}
+
+void initialize_app(const Options &options)
 {
   Serial.begin(115200);
   Serial.println("DeskClock S3 simulator starting");
 
   i2c_master_Init();
+  if (options.reference_scene) {
+    seed_reference_preferences();
+  }
+  if (!options.fixed_time.empty()) {
+    time_t fixed_epoch = 0;
+    if (parse_fixed_time(options.fixed_time, fixed_epoch)) {
+      deskclock_sim_set_epoch(fixed_epoch);
+    } else {
+      std::cerr << "Invalid --fixed-time value: " << options.fixed_time << "\n";
+    }
+  }
   DeskClock::SettingsService::begin();
   DeskClock::NetworkService::begin();
   DeskClock::TimeService::begin();
@@ -179,7 +235,7 @@ int main(int argc, char **argv)
     setenv("SDL_VIDEODRIVER", "dummy", 0);
   }
 
-  initialize_app();
+  initialize_app(options);
 
   lv_init();
   lv_display_t *display = lv_sdl_window_create(kDisplayWidth, kDisplayHeight);

@@ -132,6 +132,19 @@ Open a specific view before capturing:
 .pio/sim-build/deskclock_sim --screenshot .pio/deskclock-network.ppm --open network
 ```
 
+Capture the deterministic visual-reference scene used for clock-face layout comparison:
+
+```sh
+.pio/sim-build/deskclock_sim --reference-scene --screenshot .pio/deskclock-reference-scene.ppm
+sips -s format png .pio/deskclock-reference-scene.ppm --out .pio/deskclock-reference-scene.png
+```
+
+Or pin any RTC time in the simulator:
+
+```sh
+.pio/sim-build/deskclock_sim --fixed-time 2024-05-22T10:24:36 --screenshot .pio/deskclock-fixed.ppm
+```
+
 Dump visible LVGL object coordinates when diagnosing layout issues:
 
 ```sh

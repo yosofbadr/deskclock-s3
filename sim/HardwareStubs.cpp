@@ -47,6 +47,11 @@ void set_simulated_epoch(time_t epoch)
 }
 } // namespace
 
+extern "C" void deskclock_sim_set_epoch(time_t epoch)
+{
+  set_simulated_epoch(epoch);
+}
+
 void i2c_master_Init(void)
 {
   if (rtc_epoch_base == 0) {
