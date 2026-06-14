@@ -60,7 +60,21 @@ It writes:
 .pio/sdcard/deskclock/themes/studio/background.jpg
 ```
 
-Then copy the contents of `.pio/sdcard` to the root of a FAT32 microSD card.
+Then copy the contents of `.pio/sdcard` to the root of a FAT32 microSD card. Rerunning the script only updates the local `.pio/sdcard` staging folder; the physical card must be mounted and recopied before the device can use refreshed backgrounds.
+
+If the card is mounted on macOS as `DESKCLOCK`, use the copy helper:
+
+```sh
+python3 scripts/copy_sd_assets.py
+```
+
+Or pass an explicit mount path:
+
+```sh
+python3 scripts/copy_sd_assets.py /Volumes/DESKCLOCK
+```
+
+Replace `/Volumes/DESKCLOCK` with the actual mounted card path if it has a different name. The helper verifies copied file hashes before reporting success.
 
 You can merge personal mascot/icon assets without committing them:
 
@@ -79,3 +93,5 @@ The Waveshare ESP32-S3-Touch-LCD-3.49 SD slot is mounted as `/sdcard` using SDMM
 - D0: GPIO40
 
 LVGL sees this as the `S:` drive, so firmware paths look like `S:/deskclock/themes/dusk/background.jpg`.
+
+The firmware expects FAT32/MS-DOS formatted cards. exFAT cards mount on macOS but are not compatible with this firmware configuration. Formatting the card as `DESKCLOCK` lets `scripts/copy_sd_assets.py` find it automatically.

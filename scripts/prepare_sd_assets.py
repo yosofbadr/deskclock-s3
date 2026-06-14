@@ -20,7 +20,7 @@ from __future__ import annotations
 import argparse
 import shutil
 from pathlib import Path
-from PIL import Image
+from PIL import Image, ImageFilter
 
 DISPLAY_SIZE = (640, 172)
 
@@ -31,14 +31,23 @@ THEME_BACKGROUNDS = {
 }
 
 
-def cover_resize(image: Image.Image, size: tuple[int, int]) -> Image.Image:
+def fit_on_blurred_canvas(image: Image.Image, size: tuple[int, int]) -> Image.Image:
+    """Fit the full artwork without cropping, filling side gaps from the image itself."""
     target_w, target_h = size
     src_w, src_h = image.size
-    scale = max(target_w / src_w, target_h / src_h)
-    resized = image.resize((round(src_w * scale), round(src_h * scale)), Image.Resampling.LANCZOS)
-    left = max(0, (resized.width - target_w) // 2)
-    top = max(0, (resized.height - target_h) // 2)
-    return resized.crop((left, top, left + target_w, top + target_h))
+
+    cover_scale = max(target_w / src_w, target_h / src_h)
+    cover = image.resize((round(src_w * cover_scale), round(src_h * cover_scale)), Image.Resampling.LANCZOS)
+    cover_left = max(0, (cover.width - target_w) // 2)
+    cover_top = max(0, (cover.height - target_h) // 2)
+    canvas = cover.crop((cover_left, cover_top, cover_left + target_w, cover_top + target_h)).filter(ImageFilter.GaussianBlur(18))
+
+    contain_scale = min(target_w / src_w, target_h / src_h)
+    contained = image.resize((round(src_w * contain_scale), round(src_h * contain_scale)), Image.Resampling.LANCZOS)
+    left = (target_w - contained.width) // 2
+    top = (target_h - contained.height) // 2
+    canvas.paste(contained, (left, top))
+    return canvas
 
 
 def prepare_backgrounds(source_dir: Path, out_root: Path) -> None:
@@ -50,7 +59,7 @@ def prepare_backgrounds(source_dir: Path, out_root: Path) -> None:
         out_dir = out_root / "deskclock" / "themes" / theme
         out_dir.mkdir(parents=True, exist_ok=True)
         with Image.open(src) as image:
-            prepared = cover_resize(image.convert("RGB"), DISPLAY_SIZE)
+            prepared = fit_on_blurred_canvas(image.convert("RGB"), DISPLAY_SIZE)
             prepared.save(out_dir / "background.jpg", quality=92, optimize=True, progressive=False)
         shutil.copy2(src, out_dir / "background-source.png")
         print(f"wrote {out_dir / 'background.jpg'}")
