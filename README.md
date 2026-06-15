@@ -135,6 +135,14 @@ cmake --build .pio/sim-build
 .pio/sim-build/deskclock_sim
 ```
 
+Run the Setup Session reliability harness and display-settings draft tests:
+
+```sh
+ctest --test-dir .pio/sim-build --output-on-failure
+```
+
+The setup harness exercises Phone Setup, Credential Entry save-before-connect, connection failure/retry/edit, Network Selection intents, unified Setup Status, and Clock/Alarm Core tick isolation using fake setup adapters.
+
 Capture a headless screenshot for review/regression checks:
 
 ```sh

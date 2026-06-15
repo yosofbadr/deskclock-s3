@@ -5,6 +5,7 @@
 
 #include "AlarmToneService.h"
 #include "BrightnessService.h"
+#include "DisplaySettingsDraft.h"
 #include "GestureTextMenu.h"
 #include "SettingsService.h"
 #include "UiWidgets.h"
@@ -37,6 +38,7 @@ const lv_font_t *view_font = nullptr;
 int32_t panel_width = 0;
 BrightnessSettings editing_brightness;
 AlarmToneSettings editing_tone;
+DisplaySettingsDraft display_draft;
 uint8_t selected_index = 2;
 lv_obj_t *title_label = nullptr;
 lv_obj_t *hint_label = nullptr;
@@ -68,25 +70,26 @@ void close_panel()
   }
 }
 
+void cancel_and_close()
+{
+  display_draft.cancel();
+  close_panel();
+}
+
 void apply_and_close()
 {
   BrightnessService::updateSettings(editing_brightness);
   AlarmToneService::updateSettings(editing_tone);
+  if (display_draft.hasStagedThemeChange()) {
+    SettingsService::setThemeIndex(display_draft.saveTheme());
+    clock_face_refresh_theme();
+  }
   close_panel();
 }
 
 void adjust_theme(int8_t delta)
 {
-  SettingsSnapshot settings = SettingsService::snapshot();
-  const uint8_t count = SettingsService::themeCount();
-  if (count == 0) {
-    return;
-  }
-  const uint8_t next = GestureTextMenu::wrapIndex(settings.theme_index, delta, count);
-  while (SettingsService::snapshot().theme_index != next) {
-    SettingsService::cycleTheme();
-  }
-  clock_face_refresh_theme();
+  display_draft.adjustTheme(delta);
 }
 
 Action action_for_index(uint8_t index)
@@ -96,6 +99,7 @@ Action action_for_index(uint8_t index)
 
 void adjust_action(Action action, int8_t delta)
 {
+  bool brightness_changed = false;
   switch (action) {
   case Action::Back:
   case Action::Save:
@@ -103,15 +107,19 @@ void adjust_action(Action action, int8_t delta)
     return;
   case Action::DayBrightness:
     editing_brightness.day_brightness = BrightnessService::nextPresetValue(editing_brightness.day_brightness, delta);
+    brightness_changed = true;
     break;
   case Action::NightBrightness:
     editing_brightness.night_brightness = BrightnessService::nextPresetValue(editing_brightness.night_brightness, delta);
+    brightness_changed = true;
     break;
   case Action::NightStart:
     editing_brightness.night_start_hour = wrap_value(editing_brightness.night_start_hour, delta, 0, 23, 1);
+    brightness_changed = true;
     break;
   case Action::DayStart:
     editing_brightness.day_start_hour = wrap_value(editing_brightness.day_start_hour, delta, 0, 23, 1);
+    brightness_changed = true;
     break;
   case Action::Audio:
     editing_tone.enabled = !editing_tone.enabled;
@@ -123,6 +131,9 @@ void adjust_action(Action action, int8_t delta)
     adjust_theme(delta);
     break;
   }
+  if (brightness_changed) {
+    BrightnessService::updateSettings(editing_brightness);
+  }
   refresh();
 }
 
@@ -130,7 +141,7 @@ void activate_action(Action action)
 {
   switch (action) {
   case Action::Back:
-    close_panel();
+    cancel_and_close();
     return;
   case Action::Save:
     apply_and_close();
@@ -153,7 +164,6 @@ void activate_action(Action action)
 
 void format_row(uint8_t index, char *row, size_t size)
 {
-  SettingsSnapshot settings = SettingsService::snapshot();
   switch (action_for_index(index)) {
   case Action::Back:
     snprintf(row, size, "Back");
@@ -180,7 +190,10 @@ void format_row(uint8_t index, char *row, size_t size)
     snprintf(row, size, "Alarm volume      %u", editing_tone.volume);
     break;
   case Action::Theme:
-    snprintf(row, size, "Theme             %u/%u", static_cast<unsigned>(settings.theme_index + 1U), static_cast<unsigned>(SettingsService::themeCount()));
+    snprintf(row, size, "Theme             %u/%u%s",
+             static_cast<unsigned>(display_draft.stagedThemeIndex() + 1U),
+             static_cast<unsigned>(SettingsService::themeCount()),
+             display_draft.hasStagedThemeChange() ? " staged" : "");
     break;
   case Action::TestTone:
     snprintf(row, size, "Test alarm tone");
@@ -297,6 +310,8 @@ void open()
 {
   editing_brightness = BrightnessService::settings();
   editing_tone = AlarmToneService::settings();
+  SettingsSnapshot settings = SettingsService::snapshot();
+  display_draft.begin(settings.theme_index, SettingsService::themeCount());
   selected_index = 2;
   GestureTextMenu::reset(&touch_state);
   refresh();

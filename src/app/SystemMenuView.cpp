@@ -15,8 +15,6 @@
 #include "TimeSetupView.h"
 #include "UiWidgets.h"
 
-extern "C" void clock_face_refresh_theme(void);
-
 namespace DeskClock {
 namespace {
 
@@ -54,20 +52,6 @@ void adjust_timezone(int8_t delta)
   SettingsService::setTimezoneIndex(next);
 }
 
-void adjust_theme(int8_t delta)
-{
-  SettingsSnapshot settings = SettingsService::snapshot();
-  const uint8_t count = SettingsService::themeCount();
-  if (count == 0) {
-    return;
-  }
-  const uint8_t next = GestureTextMenu::wrapIndex(settings.theme_index, delta, count);
-  while (SettingsService::snapshot().theme_index != next) {
-    SettingsService::cycleTheme();
-  }
-  clock_face_refresh_theme();
-}
-
 void shutdown_board()
 {
   Serial.println("SystemMenuView: power off requested");
@@ -103,7 +87,7 @@ void format_item(uint8_t index, char *buffer, size_t size)
     snprintf(buffer, size, "Brightness %u", BrightnessService::currentBrightness());
     break;
   case 7:
-    snprintf(buffer, size, "Theme      %u/%u", static_cast<unsigned>(settings.theme_index + 1U), static_cast<unsigned>(SettingsService::themeCount()));
+    snprintf(buffer, size, "Theme      %u/%u in display", static_cast<unsigned>(settings.theme_index + 1U), static_cast<unsigned>(SettingsService::themeCount()));
     break;
   case 8:
     snprintf(buffer, size, "Power off  audio %s", tone.enabled ? "on" : "off");
@@ -257,7 +241,7 @@ void adjustSelected(int8_t delta)
     adjust_brightness(delta);
     break;
   case 7:
-    adjust_theme(delta);
+    (void)delta;
     break;
   default:
     break;
@@ -301,8 +285,8 @@ void activateSelected()
     refresh();
     break;
   case 7:
-    adjust_theme(1);
-    refresh();
+    close();
+    BrightnessSettingsView::open();
     break;
   case 8:
     shutdown_board();
