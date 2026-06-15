@@ -26,9 +26,9 @@ constexpr const char *kEnabledKey = "wifi_en";
 constexpr const char *kDemoSelectedKey = "wifi_demo";
 constexpr const char *kSelectedSsidKey = "wifi_ssid";
 constexpr const char *kPasswordKey = "wifi_pass";
-constexpr int kMaxScannedNetworks = 5;
-constexpr size_t kSsidBufferLength = 33;
-constexpr size_t kPasswordBufferLength = 65;
+constexpr int kMaxScannedNetworks = kSetupMaxScannedNetworks;
+constexpr size_t kSsidBufferLength = kSetupSsidBufferLength;
+constexpr size_t kPasswordBufferLength = kSetupPasswordBufferLength;
 
 bool network_enabled = false;
 bool demo_network_selected = false;
@@ -37,21 +37,21 @@ char selected_password[kPasswordBufferLength] = "";
 char password_preview[kPasswordBufferLength] = "";
 char scanned_ssids[kMaxScannedNetworks][kSsidBufferLength] = {};
 int scanned_count = 0;
+SetupStatus last_setup_status;
 bool ntp_started = false;
 bool ntp_synced = false;
 uint8_t ntp_timezone_index = 255;
 uint32_t last_ntp_check_ms = 0;
 uint32_t last_connect_attempt_ms = 0;
 
-volatile bool phone_setup_requested = false;
 volatile bool phone_setup_active = false;
-bool phone_setup_credentials_pending = false;
-char phone_setup_name[32] = "DESKCLOCK";
-char phone_setup_pin[12] = "DC000000";
-char phone_setup_transport[8] = "SoftAP";
-char setup_url[40] = "not connected";
-char pending_ssid[kSsidBufferLength] = "";
-char pending_password[kPasswordBufferLength] = "";
+char phone_setup_name[kSetupNameBufferLength] = "DESKCLOCK";
+char phone_setup_pin[kSetupPinBufferLength] = "DC000000";
+char phone_setup_transport[kSetupTransportBufferLength] = "SoftAP";
+char setup_url[kSetupUrlBufferLength] = "not connected";
+bool theme_refresh_pending = false;
+bool connection_attempt_active = false;
+uint32_t connection_attempt_started_ms = 0;
 
 #ifndef DESKCLOCK_SIMULATOR
 IPAddress setup_ap_ip(192, 168, 4, 1);
@@ -66,6 +66,29 @@ bool settings_server_started = false;
 
 void save();
 bool start_wifi_connection();
+bool is_wifi_connected();
+void generate_phone_setup_identity(SetupIdentity &identity);
+bool begin_phone_setup_transport(SetupIdentity &identity);
+int perform_wifi_scan(SetupNetworkRecord *records, int max_records);
+void copy_setup_url(char *destination, size_t destination_size);
+void service_pending_theme_refresh();
+
+class NetworkSetupSessionAdapters : public SetupSessionAdapters {
+public:
+  bool startPhoneSetup(SetupIdentity &identity) override;
+  bool startPortal(const SetupIdentity &identity) override;
+  int scanNetworks(SetupNetworkRecord *records, int max_records) override;
+  bool saveCredentials(const char *ssid, const char *password, bool enabled, bool demo_selected) override;
+  bool setEnabled(bool enabled) override;
+  bool saveDemoNetwork() override;
+  bool startConnection(const char *ssid, const char *password) override;
+  bool isConnected() override;
+  bool connectionFailed() override;
+  void updateSetupUrl(char *url, size_t url_size) override;
+};
+
+NetworkSetupSessionAdapters setup_adapters;
+SetupSession setup_session(setup_adapters);
 
 void update_password_preview()
 {
@@ -80,6 +103,14 @@ void update_password_preview()
 void set_setup_url_not_connected()
 {
   strlcpy(setup_url, "not connected", sizeof(setup_url));
+}
+
+void copy_setup_url(char *destination, size_t destination_size)
+{
+  if (destination == nullptr || destination_size == 0) {
+    return;
+  }
+  strlcpy(destination, setup_url, destination_size);
 }
 
 #ifndef DESKCLOCK_SIMULATOR
@@ -158,6 +189,14 @@ void send_web_settings_page()
   page += html_escape(network.status);
   page += F("</p><p><b>Network:</b> ");
   page += html_escape(network.ssid);
+  page += F("</p><p><b>Credentials:</b> ");
+  page += network.credentials_saved ? F("saved") : F("not saved");
+  page += F("</p><p><b>Retry:</b> ");
+  page += network.retry_available ? F("available") : F("not needed");
+  page += F("</p><p><b>Setup network:</b> ");
+  page += html_escape(network.phone_setup_name);
+  page += F(" / ");
+  page += html_escape(network.phone_setup_pin);
   page += F("</p><p><b>This page:</b> <a href='/'>");
   page += html_escape(network.setup_url);
   page += F("</a></p></div><form method=post action='/settings'>");
@@ -205,14 +244,19 @@ void handle_web_settings_post()
   log_http_request("POST");
   bool theme_changed = false;
   bool timezone_changed = false;
+  bool credentials_submitted = false;
+  bool credentials_saved = false;
   if (settings_server.hasArg("wifi_ssid") && settings_server.arg("wifi_ssid").length() > 0) {
-    strlcpy(pending_ssid, settings_server.arg("wifi_ssid").c_str(), sizeof(pending_ssid));
+    char submitted_ssid[kSsidBufferLength] = "";
+    char submitted_password[kPasswordBufferLength] = "";
+    strlcpy(submitted_ssid, settings_server.arg("wifi_ssid").c_str(), sizeof(submitted_ssid));
     if (settings_server.hasArg("wifi_pass") && settings_server.arg("wifi_pass").length() > 0) {
-      strlcpy(pending_password, settings_server.arg("wifi_pass").c_str(), sizeof(pending_password));
+      strlcpy(submitted_password, settings_server.arg("wifi_pass").c_str(), sizeof(submitted_password));
     } else {
-      strlcpy(pending_password, selected_password, sizeof(pending_password));
+      strlcpy(submitted_password, selected_password, sizeof(submitted_password));
     }
-    phone_setup_credentials_pending = true;
+    credentials_submitted = true;
+    credentials_saved = setup_session.dispatch(SetupIntent::submitCredentials(submitted_ssid, submitted_password));
   }
   if (settings_server.hasArg("tz")) {
     const uint8_t index = static_cast<uint8_t>(settings_server.arg("tz").toInt());
@@ -238,12 +282,15 @@ void handle_web_settings_post()
   }
   SettingsService::setConfigured(true);
   if (theme_changed) {
-    if (lvgl_port_lock(500)) {
-      clock_face_refresh_theme();
-      lvgl_port_unlock();
+    theme_refresh_pending = true;
+  }
+  if (credentials_submitted) {
+    if (credentials_saved) {
+      settings_server.send(200, "text/plain", "Credentials saved; connecting...\n");
     } else {
-      Serial.println("NetworkService: LVGL lock timeout; theme refresh skipped");
+      settings_server.send(500, "text/plain", "Credential save failed; edit credentials and retry.\n");
     }
+    return;
   }
   settings_server.sendHeader("Location", "/");
   settings_server.send(303, "text/plain", "Saved");
@@ -263,7 +310,15 @@ void ensure_settings_server_routes()
   settings_server.on("/status", HTTP_GET, []() {
     log_http_request("STATUS");
     NetworkSnapshot network = NetworkService::snapshot();
-    String json = "{\"status\":\"" + html_escape(network.status) + "\",\"ssid\":\"" + html_escape(network.ssid) + "\",\"setup_url\":\"" + html_escape(network.setup_url) + "\"}";
+    String json = "{\"status\":\"" + html_escape(network.status) + "\",\"ssid\":\"" + html_escape(network.ssid) + "\",\"credentials_saved\":";
+    json += network.credentials_saved ? F("true") : F("false");
+    json += F(",\"retry_available\":");
+    json += network.retry_available ? F("true") : F("false");
+    json += F(",\"setup_url\":\"");
+    json += html_escape(network.setup_url);
+    json += F("\",\"setup_network\":\"");
+    json += html_escape(network.phone_setup_name);
+    json += F("\"}");
     settings_server.send(200, "application/json", json);
   });
   settings_server.on("/generate_204", HTTP_GET, send_web_settings_page);
@@ -320,22 +375,26 @@ void handle_settings_server()
   }
 }
 
-void generate_phone_setup_identity()
+void generate_phone_setup_identity(SetupIdentity &identity)
 {
   const uint64_t mac = ESP.getEfuseMac();
   const uint32_t suffix = static_cast<uint32_t>(mac & 0xFFFFU);
   const uint32_t pin = static_cast<uint32_t>(mac % 1000000ULL);
-  snprintf(phone_setup_name, sizeof(phone_setup_name), "PROV_DC%04lX", static_cast<unsigned long>(suffix));
-  snprintf(phone_setup_pin, sizeof(phone_setup_pin), "DC%06lu", static_cast<unsigned long>(pin));
-  strlcpy(phone_setup_transport, "SoftAP", sizeof(phone_setup_transport));
+  snprintf(identity.network_name, sizeof(identity.network_name), "PROV_DC%04lX", static_cast<unsigned long>(suffix));
+  snprintf(identity.network_password, sizeof(identity.network_password), "DC%06lu", static_cast<unsigned long>(pin));
+  strlcpy(identity.transport, "SoftAP", sizeof(identity.transport));
+  strlcpy(identity.url, setup_url, sizeof(identity.url));
+  strlcpy(phone_setup_name, identity.network_name, sizeof(phone_setup_name));
+  strlcpy(phone_setup_pin, identity.network_password, sizeof(phone_setup_pin));
+  strlcpy(phone_setup_transport, identity.transport, sizeof(phone_setup_transport));
 }
 
-bool begin_phone_setup_transport()
+bool begin_phone_setup_transport(SetupIdentity &identity)
 {
-  phone_setup_requested = false;
   phone_setup_active = true;
-  phone_setup_credentials_pending = false;
-  generate_phone_setup_identity();
+  strlcpy(phone_setup_name, identity.network_name, sizeof(phone_setup_name));
+  strlcpy(phone_setup_pin, identity.network_password, sizeof(phone_setup_pin));
+  strlcpy(phone_setup_transport, identity.transport, sizeof(phone_setup_transport));
 
   Serial.printf("NetworkService: starting setup AP ssid=%s pass=%s\n", phone_setup_name, phone_setup_pin);
   WiFi.mode(WIFI_AP_STA);
@@ -347,6 +406,7 @@ bool begin_phone_setup_transport()
     return false;
   }
   set_setup_url_from_ap();
+  strlcpy(identity.url, setup_url, sizeof(identity.url));
   ensure_settings_server_routes();
   if (!settings_server_started) {
     settings_server.begin();
@@ -362,6 +422,7 @@ void handle_wifi_event(arduino_event_t *event)
   switch (event->event_id) {
   case ARDUINO_EVENT_WIFI_STA_GOT_IP:
     update_setup_url_from_wifi();
+    connection_attempt_active = false;
     Serial.printf("NetworkService: Wi-Fi got IP, setup at %s\n", setup_url);
     if (phone_setup_active) {
       stop_captive_dns();
@@ -384,38 +445,29 @@ void handle_wifi_event(arduino_event_t *event)
 #else
 void handle_settings_server() {}
 void maybe_start_settings_server() {}
-void generate_phone_setup_identity()
+void generate_phone_setup_identity(SetupIdentity &identity)
 {
-  strlcpy(phone_setup_name, "DESKCLOCK-SIM", sizeof(phone_setup_name));
-  strlcpy(phone_setup_pin, "DC000000", sizeof(phone_setup_pin));
-  strlcpy(phone_setup_transport, "SoftAP", sizeof(phone_setup_transport));
+  strlcpy(identity.network_name, "DESKCLOCK-SIM", sizeof(identity.network_name));
+  strlcpy(identity.network_password, "DC000000", sizeof(identity.network_password));
+  strlcpy(identity.transport, "SoftAP", sizeof(identity.transport));
+  strlcpy(identity.url, setup_url, sizeof(identity.url));
+  strlcpy(phone_setup_name, identity.network_name, sizeof(phone_setup_name));
+  strlcpy(phone_setup_pin, identity.network_password, sizeof(phone_setup_pin));
+  strlcpy(phone_setup_transport, identity.transport, sizeof(phone_setup_transport));
 }
 
-bool begin_phone_setup_transport()
+bool begin_phone_setup_transport(SetupIdentity &identity)
 {
-  phone_setup_requested = false;
   phone_setup_active = true;
+  strlcpy(phone_setup_name, identity.network_name, sizeof(phone_setup_name));
+  strlcpy(phone_setup_pin, identity.network_password, sizeof(phone_setup_pin));
+  strlcpy(phone_setup_transport, identity.transport, sizeof(phone_setup_transport));
+  strlcpy(setup_url, "http://192.168.4.1/", sizeof(setup_url));
+  strlcpy(identity.url, setup_url, sizeof(identity.url));
   Serial.printf("NetworkService: simulated phone setup name=%s pin=%s\n", phone_setup_name, phone_setup_pin);
   return true;
 }
 #endif
-
-void apply_pending_phone_credentials()
-{
-  if (!phone_setup_credentials_pending) {
-    return;
-  }
-  strlcpy(selected_ssid, pending_ssid, sizeof(selected_ssid));
-  strlcpy(selected_password, pending_password, sizeof(selected_password));
-  demo_network_selected = false;
-  network_enabled = true;
-  update_password_preview();
-  save();
-  phone_setup_credentials_pending = false;
-  last_connect_attempt_ms = millis();
-  Serial.printf("NetworkService: saved phone credentials for %s\n", selected_ssid);
-  (void)start_wifi_connection();
-}
 
 bool is_wifi_connected()
 {
@@ -435,6 +487,8 @@ bool start_wifi_connection()
 
   ntp_started = false;
   ntp_synced = false;
+  connection_attempt_active = true;
+  connection_attempt_started_ms = millis();
 #ifndef DESKCLOCK_SIMULATOR
   WiFi.mode(phone_setup_active ? WIFI_AP_STA : WIFI_STA);
   WiFi.begin(selected_ssid, selected_password);
@@ -465,6 +519,61 @@ bool start_wifi_connection()
 #endif
 }
 
+int perform_wifi_scan(SetupNetworkRecord *records, int max_records)
+{
+  scanned_count = 0;
+  if (records == nullptr || max_records <= 0) {
+    return 0;
+  }
+#ifndef DESKCLOCK_SIMULATOR
+  WiFi.mode(WIFI_STA);
+  const int found = WiFi.scanNetworks();
+  if (found < 0) {
+    Serial.printf("NetworkService: scan failed err=%d\n", found);
+    return 0;
+  }
+  scanned_count = found > kMaxScannedNetworks ? kMaxScannedNetworks : found;
+  if (scanned_count > max_records) {
+    scanned_count = max_records;
+  }
+  for (int index = 0; index < scanned_count; ++index) {
+    strlcpy(scanned_ssids[index], WiFi.SSID(index).c_str(), kSsidBufferLength);
+    strlcpy(records[index].ssid, scanned_ssids[index], sizeof(records[index].ssid));
+  }
+  Serial.printf("NetworkService: scanned %d networks, showing %d\n", found, scanned_count);
+  return scanned_count;
+#else
+  wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+  esp_err_t err = esp_wifi_init(&cfg);
+  if (err != ESP_OK && err != ESP_ERR_WIFI_INIT_STATE) {
+    Serial.printf("NetworkService: wifi init failed err=%d\n", err);
+    return 0;
+  }
+  ESP_ERROR_CHECK_WITHOUT_ABORT(esp_wifi_set_mode(WIFI_MODE_STA));
+  ESP_ERROR_CHECK_WITHOUT_ABORT(esp_wifi_start());
+
+  wifi_scan_config_t scan_config = {};
+  err = esp_wifi_scan_start(&scan_config, true);
+  if (err != ESP_OK) {
+    Serial.printf("NetworkService: scan failed err=%d\n", err);
+    return 0;
+  }
+
+  uint16_t found = 0;
+  esp_wifi_scan_get_ap_num(&found);
+  wifi_ap_record_t wifi_records[kMaxScannedNetworks] = {};
+  uint16_t requested = static_cast<uint16_t>(max_records < kMaxScannedNetworks ? max_records : kMaxScannedNetworks);
+  esp_wifi_scan_get_ap_records(&requested, wifi_records);
+  scanned_count = requested;
+  for (int index = 0; index < scanned_count; ++index) {
+    strlcpy(scanned_ssids[index], reinterpret_cast<const char *>(wifi_records[index].ssid), kSsidBufferLength);
+    strlcpy(records[index].ssid, scanned_ssids[index], sizeof(records[index].ssid));
+  }
+  Serial.printf("NetworkService: scanned %u networks, showing %d\n", found, scanned_count);
+  return scanned_count;
+#endif
+}
+
 void save()
 {
   Preferences preferences;
@@ -479,13 +588,122 @@ void save()
   preferences.end();
 }
 
+void service_pending_theme_refresh()
+{
+  if (!theme_refresh_pending) {
+    return;
+  }
+#ifndef DESKCLOCK_SIMULATOR
+  if (lvgl_port_lock(500)) {
+    clock_face_refresh_theme();
+    lvgl_port_unlock();
+    theme_refresh_pending = false;
+  } else {
+    Serial.println("NetworkService: LVGL lock timeout; theme refresh deferred");
+  }
+#else
+  clock_face_refresh_theme();
+  theme_refresh_pending = false;
+#endif
+}
+
+bool NetworkSetupSessionAdapters::startPhoneSetup(SetupIdentity &identity)
+{
+  return begin_phone_setup_transport(identity);
+}
+
+bool NetworkSetupSessionAdapters::startPortal(const SetupIdentity &)
+{
+#ifndef DESKCLOCK_SIMULATOR
+  ensure_settings_server_routes();
+  if (!settings_server_started) {
+    settings_server.begin();
+    settings_server_started = true;
+  }
+#endif
+  return true;
+}
+
+int NetworkSetupSessionAdapters::scanNetworks(SetupNetworkRecord *records, int max_records)
+{
+  return perform_wifi_scan(records, max_records);
+}
+
+bool NetworkSetupSessionAdapters::saveCredentials(const char *ssid, const char *password, bool enabled, bool demo_selected)
+{
+  strlcpy(selected_ssid, ssid == nullptr ? "" : ssid, sizeof(selected_ssid));
+  strlcpy(selected_password, password == nullptr ? "" : password, sizeof(selected_password));
+  network_enabled = enabled;
+  demo_network_selected = demo_selected;
+  update_password_preview();
+  save();
+  Serial.printf("NetworkService: saved setup credentials for %s\n", selected_ssid[0] == '\0' ? "<none>" : selected_ssid);
+  return true;
+}
+
+bool NetworkSetupSessionAdapters::setEnabled(bool enabled)
+{
+  network_enabled = enabled;
+  if (!enabled) {
+    connection_attempt_active = false;
+  }
+  save();
+  return true;
+}
+
+bool NetworkSetupSessionAdapters::saveDemoNetwork()
+{
+  demo_network_selected = true;
+  selected_ssid[0] = '\0';
+  selected_password[0] = '\0';
+  network_enabled = true;
+  update_password_preview();
+  save();
+  return true;
+}
+
+bool NetworkSetupSessionAdapters::startConnection(const char *ssid, const char *password)
+{
+  strlcpy(selected_ssid, ssid == nullptr ? "" : ssid, sizeof(selected_ssid));
+  strlcpy(selected_password, password == nullptr ? "" : password, sizeof(selected_password));
+  update_password_preview();
+  last_connect_attempt_ms = millis();
+  return start_wifi_connection();
+}
+
+bool NetworkSetupSessionAdapters::isConnected()
+{
+  return is_wifi_connected();
+}
+
+bool NetworkSetupSessionAdapters::connectionFailed()
+{
+  if (!connection_attempt_active || is_wifi_connected()) {
+    return false;
+  }
+  return millis() - connection_attempt_started_ms >= 30000UL;
+}
+
+void NetworkSetupSessionAdapters::updateSetupUrl(char *url, size_t url_size)
+{
+#ifndef DESKCLOCK_SIMULATOR
+  if (is_wifi_connected()) {
+    update_setup_url_from_wifi();
+  } else if (phone_setup_active) {
+    set_setup_url_from_ap();
+  }
+#endif
+  copy_setup_url(url, url_size);
+}
+
 } // namespace
 
 namespace NetworkService {
 
 void begin()
 {
-  generate_phone_setup_identity();
+  SetupIdentity identity;
+  generate_phone_setup_identity(identity);
 #ifndef DESKCLOCK_SIMULATOR
   WiFi.onEvent(handle_wifi_event);
 #endif
@@ -509,16 +727,14 @@ void begin()
     update_password_preview();
     preferences.end();
   }
+  setup_session.begin(identity, selected_ssid, selected_password, network_enabled, demo_network_selected);
 }
 
 void loop()
 {
   handle_settings_server();
-  apply_pending_phone_credentials();
-  if (phone_setup_requested) {
-    (void)begin_phone_setup_transport();
-    return;
-  }
+  setup_session.loop();
+  service_pending_theme_refresh();
 
   if (!network_enabled) {
     return;
@@ -528,11 +744,12 @@ void loop()
     if (phone_setup_active) {
       return;
     }
+    const SetupStatus status = setup_session.status();
     const uint32_t now_ms = millis();
-    if (!demo_network_selected && selected_ssid[0] != '\0' &&
+    if (!demo_network_selected && status.credentials_saved && status.state != SetupState::ConnectionFailed &&
         (last_connect_attempt_ms == 0 || now_ms - last_connect_attempt_ms >= 30000UL)) {
       last_connect_attempt_ms = now_ms;
-      (void)start_wifi_connection();
+      (void)setup_session.dispatch(SetupIntent::connectSelected());
     }
     return;
   }
@@ -582,180 +799,104 @@ void loop()
 
 NetworkSnapshot snapshot()
 {
+  last_setup_status = setup_session.status();
   NetworkSnapshot result;
   result.enabled = network_enabled;
-  result.phone_setup_active = phone_setup_active;
-  result.phone_setup_name = phone_setup_name;
-  result.phone_setup_pin = phone_setup_pin;
-  result.phone_setup_transport = phone_setup_transport;
-  result.setup_url = setup_url;
   result.connected = is_wifi_connected();
-  result.ssid = selected_ssid[0] != '\0' ? selected_ssid : (demo_network_selected ? "Demo network" : "not selected");
-  result.password_preview = password_preview;
-  if (phone_setup_active) {
-    result.status = "phone setup active";
-  } else if (phone_setup_credentials_pending) {
-    result.status = "phone credentials received";
-  } else if (result.connected && ntp_synced) {
+  result.phone_setup_active = last_setup_status.phone_setup_ready || last_setup_status.state == SetupState::PhoneSetupStarting || phone_setup_active;
+  result.credentials_saved = last_setup_status.credentials_saved;
+  result.retry_available = last_setup_status.retry_available;
+  result.setup_state = last_setup_status.state;
+  result.phone_setup_name = last_setup_status.setup_network_name;
+  result.phone_setup_pin = last_setup_status.setup_network_password;
+  result.phone_setup_transport = last_setup_status.setup_transport;
+  result.setup_url = last_setup_status.setup_url;
+  result.ssid = last_setup_status.selected_network;
+  result.password_preview = last_setup_status.password_preview;
+  if (result.connected && ntp_synced) {
     result.status = "connected; time synced";
-  } else if (result.connected) {
-    result.status = strcmp(setup_url, "not connected") == 0 ? "connected; setup starting" : "connected; setup web ready";
-  } else if (!network_enabled) {
-    result.status = "Wi-Fi skipped";
-  } else if (selected_ssid[0] != '\0' && selected_password[0] != '\0') {
-    result.status = "credentials saved; not connected";
-  } else if (selected_ssid[0] != '\0') {
-    result.status = "network selected; password needed";
-  } else if (demo_network_selected) {
-    result.status = "demo selected; not connected";
-  } else if (scanned_count > 0) {
-    result.status = "scan complete";
   } else {
-    result.status = "select network";
+    result.status = last_setup_status.status_text;
   }
   return result;
 }
 
 void setEnabled(bool enabled)
 {
-  network_enabled = enabled;
+  if (!enabled) {
+    (void)setup_session.dispatch(SetupIntent::disableWifi());
+    return;
+  }
+  network_enabled = true;
   save();
+  SetupIdentity identity;
+  generate_phone_setup_identity(identity);
+  setup_session.begin(identity, selected_ssid, selected_password, network_enabled, demo_network_selected);
 }
 
 void selectDemoNetwork()
 {
-  demo_network_selected = true;
-  selected_ssid[0] = '\0';
-  selected_password[0] = '\0';
-  update_password_preview();
-  network_enabled = true;
-  save();
+  (void)setup_session.dispatch(SetupIntent::selectDemoNetwork());
 }
 
 int scanNetworks()
 {
-  scanned_count = 0;
-#ifndef DESKCLOCK_SIMULATOR
-  WiFi.mode(WIFI_STA);
-  const int found = WiFi.scanNetworks();
-  if (found < 0) {
-    Serial.printf("NetworkService: scan failed err=%d\n", found);
-    return 0;
-  }
-  scanned_count = found > kMaxScannedNetworks ? kMaxScannedNetworks : found;
-  for (int index = 0; index < scanned_count; ++index) {
-    strlcpy(scanned_ssids[index], WiFi.SSID(index).c_str(), kSsidBufferLength);
-  }
-  Serial.printf("NetworkService: scanned %d networks, showing %d\n", found, scanned_count);
-  return scanned_count;
-#else
-  wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-  esp_err_t err = esp_wifi_init(&cfg);
-  if (err != ESP_OK && err != ESP_ERR_WIFI_INIT_STATE) {
-    Serial.printf("NetworkService: wifi init failed err=%d\n", err);
-    return 0;
-  }
-  ESP_ERROR_CHECK_WITHOUT_ABORT(esp_wifi_set_mode(WIFI_MODE_STA));
-  ESP_ERROR_CHECK_WITHOUT_ABORT(esp_wifi_start());
-
-  wifi_scan_config_t scan_config = {};
-  err = esp_wifi_scan_start(&scan_config, true);
-  if (err != ESP_OK) {
-    Serial.printf("NetworkService: scan failed err=%d\n", err);
-    return 0;
-  }
-
-  uint16_t found = 0;
-  esp_wifi_scan_get_ap_num(&found);
-  wifi_ap_record_t records[kMaxScannedNetworks] = {};
-  uint16_t requested = kMaxScannedNetworks;
-  esp_wifi_scan_get_ap_records(&requested, records);
-  scanned_count = requested;
-  for (int index = 0; index < scanned_count; ++index) {
-    strlcpy(scanned_ssids[index], reinterpret_cast<const char *>(records[index].ssid), kSsidBufferLength);
-  }
-  Serial.printf("NetworkService: scanned %u networks, showing %d\n", found, scanned_count);
-  return scanned_count;
-#endif
+  (void)setup_session.dispatch(SetupIntent::scanNetworks());
+  return setup_session.scannedNetworkCount();
 }
 
 int scannedNetworkCount()
 {
-  return scanned_count;
+  return setup_session.scannedNetworkCount();
 }
 
 const char *scannedSsid(int index)
 {
-  if (index < 0 || index >= scanned_count) {
+  if (index < 0) {
     return "";
   }
-  return scanned_ssids[index];
+  return setup_session.scannedSsid(static_cast<uint8_t>(index));
 }
 
 void selectScannedNetwork(int index)
 {
-  if (index < 0 || index >= scanned_count) {
-    return;
-  }
-  strlcpy(selected_ssid, scanned_ssids[index], sizeof(selected_ssid));
-  demo_network_selected = false;
-  network_enabled = true;
-  save();
+  (void)setup_session.dispatch(SetupIntent::selectNetwork(index));
 }
 
 void appendPasswordChar(char value)
 {
-  const size_t length = strlen(selected_password);
-  if (length + 1 >= sizeof(selected_password)) {
-    return;
-  }
-  selected_password[length] = value;
-  selected_password[length + 1] = '\0';
-  update_password_preview();
-  save();
+  (void)setup_session.dispatch(SetupIntent::appendPasswordChar(value));
 }
 
 void backspacePassword()
 {
-  const size_t length = strlen(selected_password);
-  if (length == 0) {
-    return;
-  }
-  selected_password[length - 1] = '\0';
-  update_password_preview();
-  save();
+  (void)setup_session.dispatch(SetupIntent::backspacePassword());
 }
 
 void clearPassword()
 {
-  selected_password[0] = '\0';
-  update_password_preview();
-  save();
+  (void)setup_session.dispatch(SetupIntent::clearPassword());
 }
 
 bool connectSelected()
 {
-  if (selected_ssid[0] == '\0') {
-    return false;
-  }
-
-  last_connect_attempt_ms = millis();
-  return start_wifi_connection();
+  return setup_session.dispatch(SetupIntent::connectSelected());
 }
 
 bool startPhoneSetup()
 {
-  if (phone_setup_active || phone_setup_requested) {
-    Serial.printf("NetworkService: phone setup already active name=%s pin=%s url=%s\n", phone_setup_name, phone_setup_pin, setup_url);
+  SetupStatus status = setup_session.status();
+  if (status.phone_setup_ready || status.state == SetupState::PhoneSetupStarting) {
+    Serial.printf("NetworkService: phone setup already active name=%s pin=%s url=%s\n", status.setup_network_name, status.setup_network_password, status.setup_url);
     return true;
   }
-  generate_phone_setup_identity();
-  phone_setup_requested = true;
-  phone_setup_active = true;
-  phone_setup_credentials_pending = false;
   set_setup_url_not_connected();
-  Serial.printf("NetworkService: phone setup requested name=%s pin=%s transport=%s\n", phone_setup_name, phone_setup_pin, phone_setup_transport);
-  return true;
+  SetupIdentity identity;
+  generate_phone_setup_identity(identity);
+  setup_session.begin(identity, selected_ssid, selected_password, network_enabled, demo_network_selected);
+  const bool accepted = setup_session.dispatch(SetupIntent::startPhoneSetup());
+  Serial.printf("NetworkService: phone setup requested name=%s pin=%s transport=%s\n", identity.network_name, identity.network_password, identity.transport);
+  return accepted;
 }
 
 } // namespace NetworkService

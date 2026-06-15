@@ -1,11 +1,16 @@
 #pragma once
 
+#include "SetupSession.h"
+
 namespace DeskClock {
 
 struct NetworkSnapshot {
   bool enabled = false;
   bool connected = false;
   bool phone_setup_active = false;
+  bool credentials_saved = false;
+  bool retry_available = false;
+  SetupState setup_state = SetupState::Idle;
   const char *status = "offline";
   const char *ssid = "not selected";
   const char *password_preview = "";
