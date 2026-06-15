@@ -6,6 +6,7 @@
 #include <time.h>
 
 #ifndef DESKCLOCK_SIMULATOR
+#include <DNSServer.h>
 #include <WebServer.h>
 #include <WiFi.h>
 #endif
@@ -13,6 +14,7 @@
 #include "BrightnessService.h"
 #include "SettingsService.h"
 #include "TimeService.h"
+#include "lvgl_port.h"
 
 extern "C" void clock_face_refresh_theme(void);
 
@@ -52,12 +54,18 @@ char pending_ssid[kSsidBufferLength] = "";
 char pending_password[kPasswordBufferLength] = "";
 
 #ifndef DESKCLOCK_SIMULATOR
+IPAddress setup_ap_ip(192, 168, 4, 1);
+IPAddress setup_ap_gateway(192, 168, 4, 1);
+IPAddress setup_ap_netmask(255, 255, 255, 0);
+DNSServer captive_dns_server;
 WebServer settings_server(80);
+bool captive_dns_started = false;
 bool settings_server_routes_registered = false;
 bool settings_server_started = false;
 #endif
 
 void save();
+bool start_wifi_connection();
 
 void update_password_preview()
 {
@@ -114,8 +122,30 @@ void update_setup_url_from_wifi()
   snprintf(setup_url, sizeof(setup_url), "http://%u.%u.%u.%u/", ip[0], ip[1], ip[2], ip[3]);
 }
 
+void set_setup_url_from_ap()
+{
+  IPAddress ip = WiFi.softAPIP();
+  if (ip[0] == 0 && ip[1] == 0 && ip[2] == 0 && ip[3] == 0) {
+    ip = setup_ap_ip;
+  }
+  snprintf(setup_url, sizeof(setup_url), "http://%u.%u.%u.%u/", ip[0], ip[1], ip[2], ip[3]);
+}
+
+void log_http_request(const char *label)
+{
+  IPAddress remote = settings_server.client().remoteIP();
+  Serial.printf("NetworkService: HTTP %s %s from %u.%u.%u.%u\n",
+                label,
+                settings_server.uri().c_str(),
+                remote[0],
+                remote[1],
+                remote[2],
+                remote[3]);
+}
+
 void send_web_settings_page()
 {
+  log_http_request("GET");
   SettingsSnapshot settings = SettingsService::snapshot();
   BrightnessSettings brightness = BrightnessService::settings();
   NetworkSnapshot network = NetworkService::snapshot();
@@ -172,6 +202,7 @@ void send_web_settings_page()
 
 void handle_web_settings_post()
 {
+  log_http_request("POST");
   bool theme_changed = false;
   bool timezone_changed = false;
   if (settings_server.hasArg("wifi_ssid") && settings_server.arg("wifi_ssid").length() > 0) {
@@ -207,7 +238,12 @@ void handle_web_settings_post()
   }
   SettingsService::setConfigured(true);
   if (theme_changed) {
-    clock_face_refresh_theme();
+    if (lvgl_port_lock(500)) {
+      clock_face_refresh_theme();
+      lvgl_port_unlock();
+    } else {
+      Serial.println("NetworkService: LVGL lock timeout; theme refresh skipped");
+    }
   }
   settings_server.sendHeader("Location", "/");
   settings_server.send(303, "text/plain", "Saved");
@@ -220,11 +256,22 @@ void ensure_settings_server_routes()
   }
   settings_server.on("/", HTTP_GET, send_web_settings_page);
   settings_server.on("/settings", HTTP_POST, handle_web_settings_post);
+  settings_server.on("/ping", HTTP_GET, []() {
+    log_http_request("PING");
+    settings_server.send(200, "text/plain", "deskclock setup ok\n");
+  });
   settings_server.on("/status", HTTP_GET, []() {
+    log_http_request("STATUS");
     NetworkSnapshot network = NetworkService::snapshot();
     String json = "{\"status\":\"" + html_escape(network.status) + "\",\"ssid\":\"" + html_escape(network.ssid) + "\",\"setup_url\":\"" + html_escape(network.setup_url) + "\"}";
     settings_server.send(200, "application/json", json);
   });
+  settings_server.on("/generate_204", HTTP_GET, send_web_settings_page);
+  settings_server.on("/gen_204", HTTP_GET, send_web_settings_page);
+  settings_server.on("/hotspot-detect.html", HTTP_GET, send_web_settings_page);
+  settings_server.on("/library/test/success.html", HTTP_GET, send_web_settings_page);
+  settings_server.on("/connecttest.txt", HTTP_GET, send_web_settings_page);
+  settings_server.onNotFound(send_web_settings_page);
   settings_server_routes_registered = true;
 }
 
@@ -240,8 +287,34 @@ void maybe_start_settings_server()
   Serial.printf("NetworkService: web setup available at %s\n", setup_url);
 }
 
+void start_captive_dns()
+{
+  if (captive_dns_started) {
+    return;
+  }
+  if (captive_dns_server.start()) {
+    captive_dns_started = true;
+    Serial.println("NetworkService: captive DNS started");
+  } else {
+    Serial.println("NetworkService: captive DNS failed to start");
+  }
+}
+
+void stop_captive_dns()
+{
+  if (!captive_dns_started) {
+    return;
+  }
+  captive_dns_server.stop();
+  captive_dns_started = false;
+  Serial.println("NetworkService: captive DNS stopped");
+}
+
 void handle_settings_server()
 {
+  if (captive_dns_started) {
+    captive_dns_server.processNextRequest();
+  }
   if (settings_server_started) {
     settings_server.handleClient();
   }
@@ -266,19 +339,20 @@ bool begin_phone_setup_transport()
 
   Serial.printf("NetworkService: starting setup AP ssid=%s pass=%s\n", phone_setup_name, phone_setup_pin);
   WiFi.mode(WIFI_AP_STA);
+  WiFi.softAPConfig(setup_ap_ip, setup_ap_gateway, setup_ap_netmask);
   const bool ok = WiFi.softAP(phone_setup_name, phone_setup_pin);
   if (!ok) {
     phone_setup_active = false;
     Serial.println("NetworkService: setup access point failed to start");
     return false;
   }
-  IPAddress ip = WiFi.softAPIP();
-  snprintf(setup_url, sizeof(setup_url), "http://%u.%u.%u.%u/", ip[0], ip[1], ip[2], ip[3]);
+  set_setup_url_from_ap();
   ensure_settings_server_routes();
   if (!settings_server_started) {
     settings_server.begin();
     settings_server_started = true;
   }
+  start_captive_dns();
   Serial.printf("NetworkService: setup AP started ssid=%s pass=%s url=%s\n", phone_setup_name, phone_setup_pin, setup_url);
   return true;
 }
@@ -289,9 +363,19 @@ void handle_wifi_event(arduino_event_t *event)
   case ARDUINO_EVENT_WIFI_STA_GOT_IP:
     update_setup_url_from_wifi();
     Serial.printf("NetworkService: Wi-Fi got IP, setup at %s\n", setup_url);
+    if (phone_setup_active) {
+      stop_captive_dns();
+      WiFi.softAPdisconnect(true);
+      phone_setup_active = false;
+      Serial.println("NetworkService: setup AP stopped after Wi-Fi connection");
+    }
     break;
   case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
-    set_setup_url_not_connected();
+    if (phone_setup_active) {
+      set_setup_url_from_ap();
+    } else {
+      set_setup_url_not_connected();
+    }
     break;
   default:
     break;
@@ -328,7 +412,9 @@ void apply_pending_phone_credentials()
   update_password_preview();
   save();
   phone_setup_credentials_pending = false;
+  last_connect_attempt_ms = millis();
   Serial.printf("NetworkService: saved phone credentials for %s\n", selected_ssid);
+  (void)start_wifi_connection();
 }
 
 bool is_wifi_connected()
@@ -350,9 +436,9 @@ bool start_wifi_connection()
   ntp_started = false;
   ntp_synced = false;
 #ifndef DESKCLOCK_SIMULATOR
-  WiFi.mode(WIFI_STA);
+  WiFi.mode(phone_setup_active ? WIFI_AP_STA : WIFI_STA);
   WiFi.begin(selected_ssid, selected_password);
-  Serial.printf("NetworkService: connecting to %s with Arduino WiFi\n", selected_ssid);
+  Serial.printf("NetworkService: connecting to %s with Arduino WiFi%s\n", selected_ssid, phone_setup_active ? " while setup AP stays active" : "");
   return true;
 #else
   wifi_config_t config = {};
@@ -659,12 +745,17 @@ bool connectSelected()
 
 bool startPhoneSetup()
 {
-  if (phone_setup_active) {
+  if (phone_setup_active || phone_setup_requested) {
     Serial.printf("NetworkService: phone setup already active name=%s pin=%s url=%s\n", phone_setup_name, phone_setup_pin, setup_url);
     return true;
   }
-  Serial.println("NetworkService: phone setup requested");
-  return begin_phone_setup_transport();
+  generate_phone_setup_identity();
+  phone_setup_requested = true;
+  phone_setup_active = true;
+  phone_setup_credentials_pending = false;
+  set_setup_url_not_connected();
+  Serial.printf("NetworkService: phone setup requested name=%s pin=%s transport=%s\n", phone_setup_name, phone_setup_pin, phone_setup_transport);
+  return true;
 }
 
 } // namespace NetworkService
