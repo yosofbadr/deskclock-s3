@@ -144,6 +144,14 @@ void adjust_date_by_days(int8_t delta)
   }
 }
 
+void close_panel()
+{
+  GestureTextMenu::reset(&touch_state);
+  if (panel != nullptr) {
+    lv_obj_add_flag(panel, LV_OBJ_FLAG_HIDDEN);
+  }
+}
+
 void save_and_close()
 {
   editing_time.second = 0;
@@ -152,7 +160,7 @@ void save_and_close()
     SettingsService::setConfigured(true);
   }
   savePreferences();
-  lv_obj_add_flag(panel, LV_OBJ_FLAG_HIDDEN);
+  close_panel();
 }
 
 void adjust_timezone(int8_t delta)
@@ -208,7 +216,7 @@ void activate_action(Action action)
 {
   switch (action) {
   case Action::Back:
-    lv_obj_add_flag(panel, LV_OBJ_FLAG_HIDDEN);
+    close_panel();
     return;
   case Action::Save:
     save_and_close();

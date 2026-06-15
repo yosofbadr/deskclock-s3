@@ -223,6 +223,7 @@ void open()
 
 void close()
 {
+  GestureTextMenu::reset(&touch_state);
   if (panel != nullptr) {
     lv_obj_add_flag(panel, LV_OBJ_FLAG_HIDDEN);
   }

@@ -60,11 +60,19 @@ uint8_t wrap_value(uint8_t value, int8_t delta, uint8_t min_value, uint8_t max_v
   return static_cast<uint8_t>(next);
 }
 
+void close_panel()
+{
+  GestureTextMenu::reset(&touch_state);
+  if (panel != nullptr) {
+    lv_obj_add_flag(panel, LV_OBJ_FLAG_HIDDEN);
+  }
+}
+
 void apply_and_close()
 {
   BrightnessService::updateSettings(editing_brightness);
   AlarmToneService::updateSettings(editing_tone);
-  lv_obj_add_flag(panel, LV_OBJ_FLAG_HIDDEN);
+  close_panel();
 }
 
 void adjust_theme(int8_t delta)
@@ -122,7 +130,7 @@ void activate_action(Action action)
 {
   switch (action) {
   case Action::Back:
-    lv_obj_add_flag(panel, LV_OBJ_FLAG_HIDDEN);
+    close_panel();
     return;
   case Action::Save:
     apply_and_close();

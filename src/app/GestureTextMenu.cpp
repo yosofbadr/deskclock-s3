@@ -76,11 +76,12 @@ void event_handler(lv_event_t *event)
 
   if (code == LV_EVENT_PRESSING && context->state->active) {
     get_pointer(context->state->last);
-    const Input input = classify_drag(context->state->start, context->state->last);
-    if (is_swipe(input) && context->callback != nullptr) {
-      context->state->emitted_swipe = true;
-      context->state->start = context->state->last;
-      context->callback(input, context->user_data);
+    if (!context->state->emitted_swipe) {
+      const Input input = classify_drag(context->state->start, context->state->last);
+      if (is_swipe(input) && context->callback != nullptr) {
+        context->state->emitted_swipe = true;
+        context->callback(input, context->user_data);
+      }
     }
     return;
   }

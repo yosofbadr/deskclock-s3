@@ -127,6 +127,7 @@ void refresh();
 
 void close_panel()
 {
+  GestureTextMenu::reset(&touch_state);
   if (panel != nullptr) {
     lv_obj_add_flag(panel, LV_OBJ_FLAG_HIDDEN);
   }
