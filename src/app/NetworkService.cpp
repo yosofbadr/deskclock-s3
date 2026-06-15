@@ -49,6 +49,18 @@ char phone_setup_name[kSetupNameBufferLength] = "DESKCLOCK";
 char phone_setup_pin[kSetupPinBufferLength] = "DC000000";
 char phone_setup_transport[kSetupTransportBufferLength] = "SoftAP";
 char setup_url[kSetupUrlBufferLength] = "not connected";
+struct PendingPortalSettings {
+  bool pending = false;
+  bool mark_configured = false;
+  bool timezone_submitted = false;
+  uint8_t timezone_index = 0;
+  bool theme_submitted = false;
+  uint8_t theme_index = 0;
+  bool brightness_submitted = false;
+  uint8_t brightness_index = 0;
+};
+
+PendingPortalSettings pending_portal_settings;
 bool theme_refresh_pending = false;
 bool connection_attempt_active = false;
 uint32_t connection_attempt_started_ms = 0;
@@ -71,6 +83,7 @@ void generate_phone_setup_identity(SetupIdentity &identity);
 bool begin_phone_setup_transport(SetupIdentity &identity);
 int perform_wifi_scan(SetupNetworkRecord *records, int max_records);
 void copy_setup_url(char *destination, size_t destination_size);
+void apply_pending_portal_settings();
 void service_pending_theme_refresh();
 
 class NetworkSetupSessionAdapters : public SetupSessionAdapters {
@@ -242,10 +255,9 @@ void send_web_settings_page()
 void handle_web_settings_post()
 {
   log_http_request("POST");
-  bool theme_changed = false;
-  bool timezone_changed = false;
   bool credentials_submitted = false;
   bool credentials_saved = false;
+  bool settings_submitted = false;
   if (settings_server.hasArg("wifi_ssid") && settings_server.arg("wifi_ssid").length() > 0) {
     char submitted_ssid[kSsidBufferLength] = "";
     char submitted_password[kPasswordBufferLength] = "";
@@ -259,30 +271,23 @@ void handle_web_settings_post()
     credentials_saved = setup_session.dispatch(SetupIntent::submitCredentials(submitted_ssid, submitted_password));
   }
   if (settings_server.hasArg("tz")) {
-    const uint8_t index = static_cast<uint8_t>(settings_server.arg("tz").toInt());
-    SettingsService::setTimezoneIndex(index);
-    timezone_changed = true;
+    pending_portal_settings.timezone_submitted = true;
+    pending_portal_settings.timezone_index = static_cast<uint8_t>(settings_server.arg("tz").toInt());
+    settings_submitted = true;
   }
   if (settings_server.hasArg("theme")) {
-    const uint8_t index = static_cast<uint8_t>(settings_server.arg("theme").toInt());
-    SettingsService::setThemeIndex(index);
-    theme_changed = true;
+    pending_portal_settings.theme_submitted = true;
+    pending_portal_settings.theme_index = static_cast<uint8_t>(settings_server.arg("theme").toInt());
+    settings_submitted = true;
   }
   if (settings_server.hasArg("brightness")) {
-    const uint8_t index = static_cast<uint8_t>(settings_server.arg("brightness").toInt());
-    const uint8_t value = BrightnessService::presetValue(index);
-    BrightnessSettings brightness = BrightnessService::settings();
-    brightness.day_brightness = value;
-    brightness.night_brightness = value;
-    BrightnessService::updateSettings(brightness);
+    pending_portal_settings.brightness_submitted = true;
+    pending_portal_settings.brightness_index = static_cast<uint8_t>(settings_server.arg("brightness").toInt());
+    settings_submitted = true;
   }
-  if (timezone_changed) {
-    ntp_started = false;
-    ntp_synced = false;
-  }
-  SettingsService::setConfigured(true);
-  if (theme_changed) {
-    theme_refresh_pending = true;
+  if (credentials_submitted || settings_submitted) {
+    pending_portal_settings.pending = true;
+    pending_portal_settings.mark_configured = true;
   }
   if (credentials_submitted) {
     if (credentials_saved) {
@@ -588,6 +593,36 @@ void save()
   preferences.end();
 }
 
+void apply_pending_portal_settings()
+{
+  if (!pending_portal_settings.pending) {
+    return;
+  }
+
+  PendingPortalSettings update = pending_portal_settings;
+  pending_portal_settings = PendingPortalSettings{};
+
+  if (update.timezone_submitted) {
+    SettingsService::setTimezoneIndex(update.timezone_index);
+    ntp_started = false;
+    ntp_synced = false;
+  }
+  if (update.theme_submitted) {
+    SettingsService::setThemeIndex(update.theme_index);
+    theme_refresh_pending = true;
+  }
+  if (update.brightness_submitted) {
+    const uint8_t value = BrightnessService::presetValue(update.brightness_index);
+    BrightnessSettings brightness = BrightnessService::settings();
+    brightness.day_brightness = value;
+    brightness.night_brightness = value;
+    BrightnessService::updateSettings(brightness);
+  }
+  if (update.mark_configured) {
+    SettingsService::setConfigured(true);
+  }
+}
+
 void service_pending_theme_refresh()
 {
   if (!theme_refresh_pending) {
@@ -734,6 +769,7 @@ void loop()
 {
   handle_settings_server();
   setup_session.loop();
+  apply_pending_portal_settings();
   service_pending_theme_refresh();
 
   if (!network_enabled) {
