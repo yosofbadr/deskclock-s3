@@ -341,6 +341,7 @@ void update_button(ButtonState &button, uint32_t now_ms)
       button.long_handled = true;
     } else if (button.pin == kPowerButtonPin && duration >= kPowerOffLongPressMs) {
       Serial.println("PWR: long press releasing power hold");
+      (void)DeskClock::BrightnessService::flushPendingSave();
       DeskClock::BoardPowerService::releaseBatteryPowerHold();
       button.long_handled = true;
     }

@@ -63,11 +63,21 @@ add_executable(deskclock_display_settings_tests
   "${CMAKE_CURRENT_LIST_DIR}/tests/DisplaySettingsDraftTest.cpp"
 )
 
+add_executable(deskclock_brightness_tests
+  "${REPO_ROOT}/src/app/BrightnessService.cpp"
+  "${CMAKE_CURRENT_LIST_DIR}/HardwareStubs.cpp"
+  "${CMAKE_CURRENT_LIST_DIR}/tests/BrightnessServiceTest.cpp"
+)
+
 target_compile_definitions(deskclock_setup_tests PRIVATE
   DESKCLOCK_SIMULATOR=1
 )
 
 target_compile_definitions(deskclock_display_settings_tests PRIVATE
+  DESKCLOCK_SIMULATOR=1
+)
+
+target_compile_definitions(deskclock_brightness_tests PRIVATE
   DESKCLOCK_SIMULATOR=1
 )
 
@@ -79,9 +89,17 @@ target_include_directories(deskclock_display_settings_tests PRIVATE
   "${REPO_ROOT}/src"
 )
 
+target_include_directories(deskclock_brightness_tests PRIVATE
+  "${CMAKE_CURRENT_LIST_DIR}"
+  "${CMAKE_CURRENT_LIST_DIR}/include"
+  "${REPO_ROOT}"
+  "${REPO_ROOT}/src"
+)
+
 enable_testing()
 add_test(NAME deskclock_setup_tests COMMAND deskclock_setup_tests)
 add_test(NAME deskclock_display_settings_tests COMMAND deskclock_display_settings_tests)
+add_test(NAME deskclock_brightness_tests COMMAND deskclock_brightness_tests)
 
 if(APPLE)
   target_link_libraries(deskclock_sim PRIVATE "-framework CoreFoundation")

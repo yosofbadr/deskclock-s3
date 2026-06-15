@@ -24,6 +24,7 @@ uint8_t presetCount();
 uint8_t presetValue(uint8_t index);
 uint8_t nextPresetValue(uint8_t current, int8_t delta);
 uint8_t cyclePreset(int8_t delta = 1);
+bool flushPendingSave();
 
 } // namespace BrightnessService
 } // namespace DeskClock

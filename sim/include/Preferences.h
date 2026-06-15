@@ -12,6 +12,17 @@
 
 class Preferences {
 public:
+  static void clear()
+  {
+    store().clear();
+    writeCountRef() = 0;
+  }
+
+  static size_t writeCount()
+  {
+    return writeCountRef();
+  }
+
   bool begin(const char *name, bool readOnly = false)
   {
     namespace_ = name == nullptr ? "default" : name;
@@ -32,6 +43,7 @@ public:
       return false;
     }
     store()[fullKey(key)] = std::vector<uint8_t>{static_cast<uint8_t>(value ? 1 : 0)};
+    writeCountRef()++;
     return true;
   }
 
@@ -47,6 +59,7 @@ public:
       return 0;
     }
     store()[fullKey(key)] = std::vector<uint8_t>{value};
+    writeCountRef()++;
     return value;
   }
 
@@ -63,6 +76,7 @@ public:
     }
     const char *safe_value = value == nullptr ? "" : value;
     store()[fullKey(key)] = std::vector<uint8_t>(safe_value, safe_value + std::strlen(safe_value) + 1);
+    writeCountRef()++;
     return std::strlen(safe_value);
   }
 
@@ -82,6 +96,7 @@ public:
     }
     const uint8_t *bytes = static_cast<const uint8_t *>(value);
     store()[fullKey(key)] = std::vector<uint8_t>(bytes, bytes + length);
+    writeCountRef()++;
     return length;
   }
 
@@ -112,6 +127,12 @@ private:
   {
     static std::map<std::string, std::vector<uint8_t>> values;
     return values;
+  }
+
+  static size_t &writeCountRef()
+  {
+    static size_t count = 0;
+    return count;
   }
 
   std::string namespace_ = "default";

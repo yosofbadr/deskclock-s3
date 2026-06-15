@@ -18,11 +18,14 @@ constexpr const char *kDayStartKey = "dstart";
 constexpr uint8_t kBrightnessPresets[] = {160, 184, 208, 232, 255};
 constexpr uint8_t kBrightnessPresetCount = sizeof(kBrightnessPresets) / sizeof(kBrightnessPresets[0]);
 constexpr uint8_t kMinimumVisibleBrightness = kBrightnessPresets[0];
+constexpr uint32_t kDeferredSaveDelayMs = 1500;
 
 portMUX_TYPE brightness_mux = portMUX_INITIALIZER_UNLOCKED;
 BrightnessSettings current_settings;
 uint8_t current_brightness = 255;
 bool has_applied = false;
+bool save_pending = false;
+uint32_t save_due_ms = 0;
 
 uint8_t clamp_brightness(uint8_t value)
 {
@@ -102,6 +105,19 @@ void save_settings(const BrightnessSettings &settings)
   preferences.end();
 }
 
+void store_settings_in_memory(const BrightnessSettings &settings)
+{
+  portENTER_CRITICAL(&brightness_mux);
+  current_settings = settings;
+  portEXIT_CRITICAL(&brightness_mux);
+}
+
+void schedule_deferred_save()
+{
+  save_pending = true;
+  save_due_ms = millis() + kDeferredSaveDelayMs;
+}
+
 } // namespace
 
 namespace BrightnessService {
@@ -144,6 +160,9 @@ void loop(const DateTime &now)
   BrightnessSettings copy = settings();
   const uint8_t desired = (now.valid && is_night_hour(now.hour, copy)) ? copy.night_brightness : copy.day_brightness;
   apply_brightness(desired);
+  if (save_pending && static_cast<int32_t>(millis() - save_due_ms) >= 0) {
+    (void)flushPendingSave();
+  }
 }
 
 BrightnessSettings settings()
@@ -160,9 +179,8 @@ void updateSettings(const BrightnessSettings &settings)
   BrightnessSettings sanitized = settings;
   sanitize_settings(sanitized);
 
-  portENTER_CRITICAL(&brightness_mux);
-  current_settings = sanitized;
-  portEXIT_CRITICAL(&brightness_mux);
+  store_settings_in_memory(sanitized);
+  save_pending = false;
 
   save_settings(sanitized);
   Serial.printf(
@@ -199,9 +217,34 @@ uint8_t cyclePreset(int8_t delta)
   const uint8_t next = next_preset_value(currentBrightness(), delta);
   updated.day_brightness = next;
   updated.night_brightness = next;
-  updateSettings(updated);
+  sanitize_settings(updated);
+  store_settings_in_memory(updated);
   apply_brightness(next);
+  schedule_deferred_save();
+  Serial.printf(
+      "BrightnessService: queued brightness save day=%u night=%u night_start=%u day_start=%u\n",
+      updated.day_brightness,
+      updated.night_brightness,
+      updated.night_start_hour,
+      updated.day_start_hour);
   return next;
+}
+
+bool flushPendingSave()
+{
+  if (!save_pending) {
+    return false;
+  }
+  BrightnessSettings copy = settings();
+  save_pending = false;
+  save_settings(copy);
+  Serial.printf(
+      "BrightnessService: flushed brightness save day=%u night=%u night_start=%u day_start=%u\n",
+      copy.day_brightness,
+      copy.night_brightness,
+      copy.night_start_hour,
+      copy.day_start_hour);
+  return true;
 }
 
 } // namespace BrightnessService
