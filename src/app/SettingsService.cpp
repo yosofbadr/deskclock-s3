@@ -115,6 +115,12 @@ void cycleTheme()
   save();
 }
 
+void setThemeIndex(uint8_t index)
+{
+  theme_index = static_cast<uint8_t>(index % kThemeCount);
+  save();
+}
+
 uint8_t themeCount()
 {
   return kThemeCount;

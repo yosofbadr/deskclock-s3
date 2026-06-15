@@ -23,6 +23,7 @@ uint8_t timezoneCount();
 const char *timezoneLabel(uint8_t index);
 const char *timezonePosix(uint8_t index);
 void cycleTheme();
+void setThemeIndex(uint8_t index);
 uint8_t themeCount();
 
 } // namespace SettingsService

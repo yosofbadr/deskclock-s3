@@ -32,6 +32,7 @@ The firmware currently brings up a landscape LVGL desk clock with:
 - date line and sync status dot
 - next-alarm indicator on the clock face
 - on-device text-menu settings for time, Wi-Fi, brightness/theme/audio, and alarm management
+- phone-friendly setup: a temporary setup Wi-Fi network before the clock is online, then a local web settings page after Wi-Fi connects
 - persisted settings and alarms using ESP32 local storage
 - alarm audio through the board speaker when enabled
 - optional personal theme assets loaded directly from a FAT32 microSD card; see [`docs/sd-assets.md`](docs/sd-assets.md)
@@ -54,6 +55,19 @@ Alarm behavior implemented so far:
 - PWR short-press cycles the saved brightness through five visible levels without rebooting
 - PWR long-press releases the battery power hold for shutdown on battery power; holding PWR starts the board when it is off
 - RESET is a hardware reset line; on ESP32 external-reset boots, firmware also advances the saved brightness through five visible levels
+
+## Phone setup
+
+Use phone setup when entering a Wi-Fi password on the small display would be cumbersome:
+
+1. Open **Settings → Wi-Fi** on the clock.
+2. Select **Phone setup start**.
+3. On your phone, join the displayed `PROV_DC....` Wi-Fi network using the displayed `DC......` password.
+4. Open `http://192.168.4.1/` if the setup page does not open automatically.
+5. Enter home Wi-Fi credentials and save. After connection, the Wi-Fi menu shows `Web setup http://<device-ip>/`.
+6. Open that URL on the same home network to adjust timezone, theme, and brightness from a larger phone/browser UI.
+
+The manual on-device password editor remains available as a fallback, but phone setup is the intended first-time Wi-Fi flow.
 
 ## Standalone/battery power
 
@@ -205,12 +219,15 @@ After flashing normal firmware, verify:
 3. Short-press BOOT and confirm serial logs `BOOT: pressed`, `BOOT: released after ... ms`, and `BOOT: opening settings menu` plus setup UI opens.
 4. In settings, verify swipe up/down changes the selected text row and swipe left/right adjusts timezone, brightness, or theme rows.
 5. Press BOOT while a row is selected and confirm it activates/adjusts that row; navigate to `Back` and press BOOT to close the menu.
-6. Alarm list opens from the next-alarm area.
-7. Add an alarm a few minutes ahead using the selected-row editor: up/down selects hour/minute/repeat/enabled rows; left/right adjusts values; tap Save stores it.
-8. Reboot and confirm the alarm persists.
-9. Let the alarm fire and confirm visual alert plus audio.
-10. Tap Dismiss and confirm the alert does not immediately re-open during the same minute.
-11. Create/fire another alarm, tap Snooze, and confirm the next-alarm indicator shows the snoozed occurrence.
-12. Let the snoozed alarm fire and confirm the sound window restarts.
-13. Test BOOT while an alert is active and confirm it logs `BOOT: dismissing active alarm` and dismisses the alarm.
-14. Optional edge check: fill all five saved alarm slots, fire one, tap Snooze, and confirm Snooze still works without needing a free saved-alarm slot.
+6. Open Wi-Fi, select `Phone setup start`, and confirm the menu shows a `PROV_DC...` setup network and `DC...` password.
+7. Provision Wi-Fi from the phone app, then confirm the Wi-Fi menu shows a `Web setup http://.../` URL.
+8. Open the web setup page from a phone/browser on the same network and save timezone/theme/brightness.
+9. Alarm list opens from the next-alarm area.
+10. Add an alarm a few minutes ahead using the selected-row editor: up/down selects hour/minute/repeat/enabled rows; left/right adjusts values; tap Save stores it.
+11. Reboot and confirm the alarm persists.
+12. Let the alarm fire and confirm visual alert plus audio.
+13. Tap Dismiss and confirm the alert does not immediately re-open during the same minute.
+14. Create/fire another alarm, tap Snooze, and confirm the next-alarm indicator shows the snoozed occurrence.
+15. Let the snoozed alarm fire and confirm the sound window restarts.
+16. Test BOOT while an alert is active and confirm it logs `BOOT: dismissing active alarm` and dismisses the alarm.
+17. Optional edge check: fill all five saved alarm slots, fire one, tap Snooze, and confirm Snooze still works without needing a free saved-alarm slot.

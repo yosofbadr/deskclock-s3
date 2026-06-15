@@ -19,8 +19,11 @@ enum class Screen : uint8_t {
 enum class MainAction : uint8_t {
   Back = 0,
   Status,
+  PhoneSetup,
+  PhoneName,
+  PhonePin,
+  WebPage,
   Network,
-  Password,
   Scan,
   Select1,
   Select2,
@@ -28,6 +31,7 @@ enum class MainAction : uint8_t {
   Connect,
   Disable,
   Demo,
+  ManualPassword,
 };
 
 enum class PasswordAction : uint8_t {
@@ -41,7 +45,7 @@ enum class PasswordAction : uint8_t {
   Clear,
 };
 
-constexpr uint8_t kMainRowCount = 11;
+constexpr uint8_t kMainRowCount = 15;
 constexpr uint8_t kPasswordRowCount = 8;
 constexpr uint8_t kVisibleRows = 5;
 constexpr int32_t kRowHeight = 26;
@@ -51,7 +55,7 @@ lv_obj_t *panel = nullptr;
 const lv_font_t *view_font = nullptr;
 int32_t panel_width = 0;
 Screen screen = Screen::Main;
-uint8_t selected_index = 4;
+uint8_t selected_index = 2;
 uint8_t keyboard_mode = 0;
 uint8_t selected_char_index = 0;
 lv_obj_t *title_label = nullptr;
@@ -115,6 +119,14 @@ void set_screen(Screen next, uint8_t selected)
   refresh();
 }
 
+void close_panel()
+{
+  GestureTextMenu::reset(&touch_state);
+  if (panel != nullptr) {
+    lv_obj_add_flag(panel, LV_OBJ_FLAG_HIDDEN);
+  }
+}
+
 MainAction main_action_for_index(uint8_t index)
 {
   return static_cast<MainAction>(index);
@@ -146,11 +158,15 @@ void activate_main_action(MainAction action)
 {
   switch (action) {
   case MainAction::Back:
-    lv_obj_add_flag(panel, LV_OBJ_FLAG_HIDDEN);
+    close_panel();
     break;
   case MainAction::Status:
   case MainAction::Connect:
     NetworkService::connectSelected();
+    refresh();
+    break;
+  case MainAction::PhoneSetup:
+    NetworkService::startPhoneSetup();
     refresh();
     break;
   case MainAction::Network:
@@ -158,8 +174,13 @@ void activate_main_action(MainAction action)
     NetworkService::scanNetworks();
     refresh();
     break;
-  case MainAction::Password:
+  case MainAction::ManualPassword:
     set_screen(Screen::Password, 2);
+    break;
+  case MainAction::PhoneName:
+  case MainAction::PhonePin:
+  case MainAction::WebPage:
+    refresh();
     break;
   case MainAction::Select1:
   case MainAction::Select2:
@@ -201,11 +222,20 @@ void adjust_main_action(MainAction action, int8_t delta)
       refresh();
     }
     return;
+  case MainAction::PhoneSetup:
+    if (delta > 0) {
+      NetworkService::startPhoneSetup();
+      refresh();
+    }
+    return;
   case MainAction::Back:
+  case MainAction::PhoneName:
+  case MainAction::PhonePin:
+  case MainAction::WebPage:
   case MainAction::Network:
-  case MainAction::Password:
   case MainAction::Scan:
   case MainAction::Demo:
+  case MainAction::ManualPassword:
   default:
     return;
   }
@@ -311,11 +341,27 @@ void format_main_row(uint8_t index, char *row, size_t size, uint32_t &color)
     color = network.connected ? 0x0F766E : 0x334155;
     snprintf(row, size, "Status     %.44s", network.status);
     break;
+  case MainAction::PhoneSetup:
+    color = network.phone_setup_active ? 0x0F766E : 0x34D399;
+    snprintf(row, size, "Phone setup %s", network.phone_setup_active ? "active" : "start");
+    break;
+  case MainAction::PhoneName:
+    color = network.phone_setup_active ? 0x0F172A : 0x64748B;
+    snprintf(row, size, "%s name %.36s", network.phone_setup_transport, network.phone_setup_name);
+    break;
+  case MainAction::PhonePin:
+    color = network.phone_setup_active ? 0x0F172A : 0x64748B;
+    snprintf(row, size, "PIN        %.16s", network.phone_setup_pin);
+    break;
+  case MainAction::WebPage:
+    color = network.connected ? 0x0F766E : 0x64748B;
+    snprintf(row, size, "Web setup  %.36s", network.setup_url);
+    break;
   case MainAction::Network:
     snprintf(row, size, "Network    %.44s", network.ssid);
     break;
-  case MainAction::Password:
-    snprintf(row, size, "Password   %.36s", network.password_preview);
+  case MainAction::ManualPassword:
+    snprintf(row, size, "Manual password");
     break;
   case MainAction::Scan:
     color = 0x0F766E;
@@ -509,7 +555,7 @@ void create(lv_obj_t *parent, int32_t width, int32_t height, const lv_font_t *fo
 void open()
 {
   screen = Screen::Main;
-  selected_index = 4;
+  selected_index = 2;
   GestureTextMenu::reset(&touch_state);
   refresh();
   lv_obj_clear_flag(panel, LV_OBJ_FLAG_HIDDEN);
