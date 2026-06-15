@@ -32,10 +32,28 @@ static const axs15231b_lcd_init_cmd_t lcd_init_cmds[] =
   {0x29, (uint8_t []){0x00}, 0, 100},
 };
 
+#define LCD_FLUSH_WAIT_TIMEOUT_MS 250
+
 static bool example_notify_lvgl_flush_ready(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t *edata, void *user_ctx)
 {
   BaseType_t TaskWoken;
   xSemaphoreGiveFromISR(flush_done_semaphore,&TaskWoken);
+  return false;
+}
+
+static void prime_flush_done_semaphore(void)
+{
+  while (xSemaphoreTake(flush_done_semaphore, 0) == pdTRUE) {
+  }
+  xSemaphoreGive(flush_done_semaphore);
+}
+
+static bool wait_flush_done_or_timeout(const char *stage)
+{
+  if (xSemaphoreTake(flush_done_semaphore, pdMS_TO_TICKS(LCD_FLUSH_WAIT_TIMEOUT_MS)) == pdTRUE) {
+    return true;
+  }
+  ESP_LOGW(TAG, "LCD flush timeout while waiting for %s", stage);
   return false;
 }
 
@@ -79,17 +97,23 @@ static void example_lvgl_flush_cb(lv_display_t * disp, const lv_area_t * area, u
   int offsety2 = offgap;
 
   uint16_t *map = (uint16_t *)lvgl_dest;
-  xSemaphoreGive(flush_done_semaphore);
+  prime_flush_done_semaphore();
   for(int i = 0; i<flush_coun; i++)
   {
-    xSemaphoreTake(flush_done_semaphore,portMAX_DELAY);
+    if (!wait_flush_done_or_timeout("rotated chunk start")) {
+      lv_disp_flush_ready(disp);
+      return;
+    }
     memcpy(trans_buf_1,map,LVGL_DMA_BUFF_LEN);
     esp_lcd_panel_draw_bitmap(panel_handle, offsetx1, offsety1, offsetx2, offsety2, trans_buf_1);
     offsety1 += offgap;
     offsety2 += offgap;
     map += dmalen;
   }
-  xSemaphoreTake(flush_done_semaphore,portMAX_DELAY);
+  if (!wait_flush_done_or_timeout("rotated final chunk")) {
+    lv_disp_flush_ready(disp);
+    return;
+  }
   lv_disp_flush_ready(disp);
 #else
   const int flush_coun = (LVGL_SPIRAM_BUFF_LEN / LVGL_DMA_BUFF_LEN);
@@ -101,17 +125,23 @@ static void example_lvgl_flush_cb(lv_display_t * disp, const lv_area_t * area, u
   int offsety2 = offgap;
 
   uint16_t *map = (uint16_t *)color_p;
-  xSemaphoreGive(flush_done_semaphore);
+  prime_flush_done_semaphore();
   for(int i = 0; i<flush_coun; i++)
   {
-    xSemaphoreTake(flush_done_semaphore,portMAX_DELAY);
+    if (!wait_flush_done_or_timeout("chunk start")) {
+      lv_disp_flush_ready(disp);
+      return;
+    }
     memcpy(trans_buf_1,map,LVGL_DMA_BUFF_LEN);
     esp_lcd_panel_draw_bitmap(panel_handle, offsetx1, offsety1, offsetx2, offsety2, trans_buf_1);
     offsety1 += offgap;
     offsety2 += offgap;
     map += dmalen;
   }
-  xSemaphoreTake(flush_done_semaphore,portMAX_DELAY);
+  if (!wait_flush_done_or_timeout("final chunk")) {
+    lv_disp_flush_ready(disp);
+    return;
+  }
   lv_disp_flush_ready(disp);
 #endif
 }
