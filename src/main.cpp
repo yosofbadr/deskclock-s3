@@ -281,10 +281,17 @@ bool activate_active_text_menu()
 
 void handle_boot_short_press()
 {
-  if (!activate_active_text_menu()) {
+  if (!lvgl_port_lock(500)) {
+    Serial.println("BOOT: LVGL lock timeout; ignoring menu action");
+    return;
+  }
+
+  const bool handled = activate_active_text_menu();
+  if (!handled) {
     Serial.println("BOOT: opening settings menu");
     DeskClock::SystemMenuView::open();
   }
+  lvgl_port_unlock();
 }
 
 void handle_power_short_press()
@@ -325,7 +332,12 @@ void update_button(ButtonState &button, uint32_t now_ms)
     const uint32_t duration = button_press_duration_ms(button, now_ms);
     if (button.pin == kBootButtonPin && duration >= kBootSettingsLongPressMs) {
       Serial.println("BOOT: long press opening settings menu");
-      DeskClock::SystemMenuView::open();
+      if (lvgl_port_lock(500)) {
+        DeskClock::SystemMenuView::open();
+        lvgl_port_unlock();
+      } else {
+        Serial.println("BOOT: LVGL lock timeout; ignoring menu action");
+      }
       button.long_handled = true;
     } else if (button.pin == kPowerButtonPin && duration >= kPowerOffLongPressMs) {
       Serial.println("PWR: long press releasing power hold");

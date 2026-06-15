@@ -138,15 +138,18 @@ static void TouchInputReadCallback(lv_indev_t * indev, lv_indev_data_t *indevDat
   }
 }
 
-static bool example_lvgl_lock(int timeout_ms)
+bool lvgl_port_lock(int timeout_ms)
 {
+  if (lvgl_mux == NULL) {
+    return false;
+  }
   const TickType_t timeout_ticks = (timeout_ms == -1) ? portMAX_DELAY : pdMS_TO_TICKS(timeout_ms);
-  return xSemaphoreTake(lvgl_mux, timeout_ticks) == pdTRUE;       
+  return xSemaphoreTake(lvgl_mux, timeout_ticks) == pdTRUE;
 }
 
-static void example_lvgl_unlock(void)
+void lvgl_port_unlock(void)
 {
-  assert(lvgl_mux && "bsp_display_start must be called first");
+  assert(lvgl_mux && "lvgl_port_init must be called first");
   xSemaphoreGive(lvgl_mux);
 }
 
@@ -155,11 +158,11 @@ void example_lvgl_port_task(void *arg)
   uint32_t task_delay_ms = LVGL_TASK_MAX_DELAY_MS;
   for(;;)
   {
-    if (example_lvgl_lock(-1)) 
+    if (lvgl_port_lock(-1))
     {
       task_delay_ms = lv_timer_handler();
       //Release the mutex
-      example_lvgl_unlock();
+      lvgl_port_unlock();
     }
     if (task_delay_ms > LVGL_TASK_MAX_DELAY_MS)
     {
@@ -271,9 +274,9 @@ void lvgl_port_init(void)
   lvgl_mux = xSemaphoreCreateMutex();
   assert(lvgl_mux);
   xTaskCreatePinnedToCore(example_lvgl_port_task, "LVGL", LVGL_TASK_STACK_SIZE, NULL, LVGL_TASK_PRIORITY, NULL,0);
-  if (example_lvgl_lock(-1))
+  if (lvgl_port_lock(-1))
   {
     clock_face_create();
-    example_lvgl_unlock();
+    lvgl_port_unlock();
   }
 }
