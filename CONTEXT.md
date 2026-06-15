@@ -58,9 +58,29 @@ _Avoid_: Wi-Fi status, connection badge
 A setup experience that can be completed using the clock itself, without editing code, reflashing firmware, or relying on a computer after installation. It covers first-time configuration, later changes to user preferences, and an offline path when network access is unavailable.
 _Avoid_: hard-coded setup, computer-only setup
 
+**Setup Isolation**:
+On-device setup must never make the clock stop behaving as a clock. Setup, network changes, credential entry, phone setup, visual theme changes, and optional configuration failures should not freeze or disable the clock/alarm core.
+_Avoid_: setup-owned clock behavior, blocking setup, network-gated clock
+
+**Setup Intent**:
+A user or web action that asks setup to do work without doing the work inline. Setup intents let the clock acknowledge an action immediately while a runtime-owned setup loop performs scanning, access-point startup, credential saving, connection attempts, or visual updates safely.
+_Avoid_: blocking menu action, touch-owned Wi-Fi work, web-owned display mutation
+
 **First-run Setup**:
 The setup experience shown when the clock has not yet been configured. It should guide the user directly into required choices while allowing Wi-Fi to be skipped in favor of manual time setup.
 _Avoid_: out-of-box demo mode, computer-required first setup
+
+**Phone Setup**:
+The primary convenience path for entering Wi-Fi credentials through a nearby phone or computer connected to the clock's temporary setup network. It must be reliable enough for normal first-run use while on-device credential entry remains available as the self-contained fallback.
+_Avoid_: experimental provisioning, toy portal, phone-required clock
+
+**Setup Session**:
+The stateful setup flow that owns phone setup, credential saving, network connection attempts, and their user-visible status. It separates saved credentials from successful connection and must preserve setup isolation in every state.
+_Avoid_: scattered setup flags, implicit Wi-Fi lifecycle, connection-owned setup
+
+**Setup Status**:
+The single user-visible setup state reported by the setup session to both the on-device setup UI and the phone setup page. It should say what is happening, whether credentials are saved, whether retry is available, and what setup URL or network name is relevant.
+_Avoid_: split status labels, hidden setup state, conflicting portal/device messages
 
 **Local Timezone**:
 The user's chosen place-based time rule for converting universal time into the wall-clock time shown by the clock. It should be selected during setup rather than guessed from network access.
@@ -95,12 +115,12 @@ The clock face should remain visible by default so the device behaves like a des
 _Avoid_: sleep-first display, touch-to-wake clock
 
 **Network Selection**:
-The on-device setup step where the user chooses which nearby network the clock should join. The user should select from discovered network names rather than manually entering the network name.
-_Avoid_: manual SSID entry, computer-assisted Wi-Fi setup
+The on-device setup step where the user chooses which nearby network the clock should join. The user should select from discovered network names rather than manually entering the network name, while the setup session owns scanning, selected-network state, and connection attempts.
+_Avoid_: manual SSID entry, computer-assisted Wi-Fi setup, view-owned scanning
 
 **Credential Entry**:
-The on-device setup step where the user enters a selected network's password. It should be possible to complete without a computer or reflashing the clock.
-_Avoid_: USB password entry, hard-coded credentials
+The setup step where the user provides Wi-Fi credentials either on-device or through phone setup. Credentials count as saved only after they are durably written to local device state; connecting to the network is a separate later outcome.
+_Avoid_: USB password entry, hard-coded credentials, connection-required save
 
 **Landscape Clock Face**:
 The main clock view is meant to sit horizontally on a desk, prioritizing large readable time across the wide dimension of the screen. It should feel like a small desktop clock rather than a phone-shaped widget.
@@ -123,8 +143,8 @@ A user-added visual theme beyond the neutral default theme. It should extend the
 _Avoid_: plug-in behavior that changes core logic, required custom assets
 
 **Theme Selection**:
-The on-device preference flow where the user previews and chooses the active visual theme. Theme selection changes appearance only and should not be triggered accidentally from the main clock face.
-_Avoid_: quick theme switching, accidental appearance change
+The on-device preference flow where the user chooses the active visual theme. Theme changes should be staged during setup and applied on save so visual theme work cannot destabilize setup or the clock/alarm core; brightness remains immediate because it affects display visibility.
+_Avoid_: quick theme switching, accidental appearance change, adjustment-time theme reload
 
 **Optional Capability**:
 A non-core feature used to explore what the board can do, such as weather, voice input/output, generated messages, or LLM integration. Optional capabilities must be opt-in and should degrade cleanly when unavailable.
